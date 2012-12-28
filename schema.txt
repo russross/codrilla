@@ -1,0 +1,52 @@
+tag:foo:description - friendly description of the tag
+tag:foo:problems - set of problem IDs (123)
+tag:foo:priority - int from 0 to 100, higher -> more important
+        90: course
+        70: language
+        50: subject
+        30: week
+        10: creator
+global:tags:all - set of all tags
+global:tags:bypriority - sorted set of all tags by priority
+
+problem:123:data - JSON encoding of all problem data
+problem:123:tags - set of tags (lower case)
+problem:123:usedby - set of courses using this problem
+global:problems:all - set of all problems
+
+instructor:uname@dixie.edu:name
+instructor:uname@dixie.edu:courses - set of current, active course tags
+instructor:uname@dixie.edu:oldcourses - set of inactive courses
+global:instructors:active - set of all instructors with active courses
+global:instructors:inactive - set of all instructors with no active courses
+
+student:uname@dmail.dixie.edu:name
+student:uname@dmail.dixie.edu:courses - set of current, active course tags
+student:uname@dmail.dixie.edu:oldcourses - set of inactive courses
+student:uname@dmail.dixie.edu:attempts:cs1410-s12-10am:789 - set of attempts for assignment
+student:uname@dmail.dixie.edu:attempts:cs1410-s12-10am:789:correct - set of successful attempts for course
+global:students:active - set of all students with active courses
+global:students:inactive - set of all students with no active courses
+global:students:bycourse:cs1410-s10-10am - set of all students in a given course
+
+course:cs1410-s10-10am:name - full name of the course
+course:cs1410-s10-10am:close - date when the course becomes inactive
+course:cs1410-s10-10am:instructors - set of instructors
+course:cs1410-s10-10am:students - set of students
+course:cs1410-s10-10am:assignments:future - set of unavailable assignments for this course
+course:cs1410-s10-10am:assignments:active - set of current assignments for this course
+course:cs1410-s10-10am:assignments:past - set of closed assignments for this course
+global:courses:active - set of all active courses
+global:courses:inactive - set of all inactive courses
+global:courses:activebyclose - sorted set of active courses by close date
+
+assignment:789:problem - ID number of problem
+assignment:789:course - tag of course
+assignment:789:open - start time for assignment
+assignment:789:close - due date for assignment
+global:assignments:futurebyopen - sorted set of future assignments, sorted by open time
+global:assignments:activebyclose - sorted set of active assignments, sorted by due date
+global:assignments:past - set of closed assignments
+global:assignments:bycourse:cs1410-s10-10am - set of all assignments for a course
+
+attempt:345:
