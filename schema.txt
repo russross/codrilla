@@ -5,6 +5,7 @@ index:tags:all - set of all tags
 index:tags:bypriority - sorted set of all tags by priority
 
 problem:123:data - JSON encoding of all problem data
+problem:123:name - brief description of this problem
 problem:123:tags - set of tags (lower case)
 problem:123:usedby - set of courses using this problem
 index:problems:all - set of all problems

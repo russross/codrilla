@@ -31,7 +31,7 @@ const scriptPath = "scripts"
 const studentEmailSuffix = "@dmail.dixie.edu"
 const instructorEmailSuffix = "@dixie.edu"
 
-func main() {
+func shellmain() {
 	// initialize time
 	zone, err := time.LoadLocation("America/Denver")
 	if err != nil {
@@ -44,44 +44,49 @@ func main() {
 	db := redis.NewClient(config)
 
 	// set up Lua scripts
-	if err := loadScripts(db, scriptPath); err != nil {
-		log.Fatal("Loading Lua scripts: ", err)
-	}
-
+	log.Print("Codrilla interactive shell")
+	log.Println()
+	loadScripts(db, scriptPath)
 	shell(db)
 }
 
-func loadScripts(db *redis.Client, path string) (err error) {
+func loadScripts(db *redis.Client, path string) {
 	names, err := filepath.Glob(path + "/*.lua")
 	if err != nil {
-		return
+		log.Fatalf("Failed to get list of Lua scripts: %v", err)
 	}
 
+	count := 0
 	for _, name := range names {
 		_, key := filepath.Split(name)
 		key = key[:len(key)-len(".lua")]
-		log.Printf("loading script %s", key)
 
 		var contents []byte
 		if contents, err = ioutil.ReadFile(name); err != nil {
-			return
+			log.Fatalf("Failed to load script %s: %v", name, err)
 		}
 
 		var reply *redis.Reply
 		if reply = db.Call("script", "load", contents); reply.Err != nil {
-			return
+			log.Fatalf("Failed to load script %s into redis: %v", name, err)
 		}
 
 		if luaScripts[key], err = reply.Str(); err != nil {
-			return
+			log.Fatalf("DB error loading script %s: %v", name, err)
 		}
+		count++
 	}
+	log.Printf("Loaded %d Lua scripts", count)
+}
 
-	return
+func cron(db *redis.Client) {
+	now := time.Now().Unix()
+	if _, err := db.Call("evalsha", luaScripts["cron"], 0, now).Str(); err != nil {
+		log.Printf("Error running cron job: %v", err)
+	}
 }
 
 func shell(db *redis.Client) {
-	log.Print("Codrilla interactive shell")
 	log.Print("Type \"help\" for a list of recognized commands")
 
 	stdin = bufio.NewReader(os.Stdin)
@@ -102,22 +107,26 @@ mainloop:
 			continue
 		}
 
+		cron(db)
+
 		switch s.TokenText() {
 		case "help":
-			log.Print("  help: see this list")
-			log.Print("  list instructors")
-			log.Print(`  create instructor`)
-			log.Print(`    "prof@dixie.edu (email)"`)
-			log.Print(`    "First Last (name)"`)
-			log.Print(`  create course`)
-			log.Print(`    "cs1410-s13-10am (tag)"`)
-			log.Print(`    "CS 1410: Object Oriented Programming (Spring 2013, MWF 10AM)"`)
-			log.Print(`    "May 15, 2013 (closing time)"`)
-			log.Print(`    "prof@dixie.edu (instructor)"`)
-			log.Print(`  update course "Grades-course.csv: update course membership`)
-			log.Print(`  remove "stud@dmail.dixie.edu" "cs1410-s13-10am": remove student from course`)
-			log.Print("  exit")
-			log.Print("  quit")
+			fmt.Println(`* help: see this list`)
+			fmt.Println(`* list instructors`)
+			fmt.Println(`* list course "cs1410-s13-10am"`)
+			fmt.Println(`* create instructor`)
+			fmt.Println(`    "prof@dixie.edu (email)"`)
+			fmt.Println(`    "First Last (name)"`)
+			fmt.Println(`* create course`)
+			fmt.Println(`    "cs1410-s13-10am (tag)"`)
+			fmt.Println(`    "CS 1410: Object Oriented Programming (Spring 2013, MWF 10am)`)
+			fmt.Println(`    "May 15, 2013 (closing time)"`)
+			fmt.Println(`    "prof@dixie.edu (instructor)"`)
+			fmt.Println(`* update course "Grades-course.csv: update membership`)
+			fmt.Println(`* remove "stud@dmail.dixie.edu" "cs1410-s13-10am":`)
+			fmt.Println(`    remove student from course`)
+			fmt.Println(`* exit`)
+			fmt.Println(`* quit`)
 
 		case "exit":
 			break mainloop
@@ -131,16 +140,19 @@ mainloop:
 				continue
 			}
 			text := s.TokenText()
-			if s.Scan() != scanner.EOF {
-				log.Print("Extra stuff at end of list command")
-				continue
-			}
 			switch text {
 			case "instructors":
 				cmd_listinstructors(db)
 
+			case "course":
+				cmd_listcourse(db, s)
+
 			default:
 				log.Print("List commands: instructors")
+			}
+			if s.Scan() != scanner.EOF {
+				log.Print("Extra stuff at end of list command")
+				continue
 			}
 
 		case "create":
@@ -375,6 +387,52 @@ func prompt(s string) (*scanner.Scanner, error) {
 
 	conf := &scanner.Scanner{}
 	return conf.Init(strings.NewReader(line)), nil
+}
+
+func cmd_listcourse(db *redis.Client, s *scanner.Scanner) {
+	// get the course tag
+	tag, err := getNonEmptyString(s, "course tag")
+	if err != nil {
+		return
+	}
+
+	// is it a valid course?
+	active, err := db.Sismember("index:courses:active", tag).Bool()
+	if err != nil {
+		log.Printf("DB error checking for active course %s: %v", tag, err)
+		return
+	}
+	inactive, err := db.Sismember("index:courses:inactive", tag).Bool()
+	if err != nil {
+		log.Printf("DB error checking for inactive course %s: %v", tag, err)
+		return
+	}
+	if active || inactive {
+		name, err := db.Get("course:" + tag + ":name").Str()
+		if err != nil {
+			log.Printf("DB error getting name of course: %v", err)
+			return
+		}
+		fmt.Println(name)
+		unix, err := db.Get("course:" + tag + ":close").Int64()
+		if err != nil {
+			log.Printf("DB error getting closing timestamp: %v", err)
+			return
+		}
+		now := time.Now().In(tz)
+		closetime := time.Unix(unix, 0).In(tz)
+		if active {
+			fmt.Printf("Course will close at %v (%v)\n", closetime, closetime.Sub(now))
+		} else {
+			fmt.Printf("Course closed at %v\n", closetime)
+		}
+	} else {
+		log.Print("Unknown course")
+		return
+	}
+
+	// list the active assignments
+	
 }
 
 func cmd_listinstructors(db *redis.Client) {
