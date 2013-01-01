@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"encoding/csv"
 	"fmt"
 	"github.com/russross/radix/redis"
 	"io"
@@ -23,7 +24,12 @@ var tz *time.Location
 // map from filenames to sha1 hashes of all scripts that are loaded
 var luaScripts = make(map[string]string)
 
+// global stdin reader
+var stdin *bufio.Reader
+
 const scriptPath = "scripts"
+const studentEmailSuffix = "@dmail.dixie.edu"
+const instructorEmailSuffix = "@dixie.edu"
 
 func main() {
 	// initialize time
@@ -78,22 +84,15 @@ func shell(db *redis.Client) {
 	log.Print("Codrilla interactive shell")
 	log.Print("Type \"help\" for a list of recognized commands")
 
-	in := bufio.NewReader(os.Stdin)
+	stdin = bufio.NewReader(os.Stdin)
 
 mainloop:
 	for {
 		// get a line of input
-		fmt.Print("> ")
-		line, err := in.ReadString('\n')
+		s, err := prompt("> ")
 		if err != nil {
-			if err != io.EOF {
-				log.Print("Error reading from keyboard: ", err)
-			}
 			break
 		}
-
-		conf := &scanner.Scanner{}
-		s := conf.Init(strings.NewReader(line))
 		tok := s.Scan()
 		if tok == scanner.EOF {
 			continue
@@ -115,6 +114,8 @@ mainloop:
 			log.Print(`    "CS 1410: Object Oriented Programming (Spring 2013, MWF 10AM)"`)
 			log.Print(`    "May 15, 2013 (closing time)"`)
 			log.Print(`    "prof@dixie.edu (instructor)"`)
+			log.Print(`  update course "Grades-course.csv: update course membership`)
+			log.Print(`  remove "stud@dmail.dixie.edu" "cs1410-s13-10am": remove student from course`)
 			log.Print("  exit")
 			log.Print("  quit")
 
@@ -158,12 +159,222 @@ mainloop:
 				log.Print("Create commands: instructor, course")
 			}
 
+		case "remove":
+			cmd_removestudent(db, s)
+
+		case "update":
+			if tok = s.Scan(); tok != scanner.Ident {
+				log.Print("Update commands: course")
+				continue
+			}
+			switch s.TokenText() {
+			case "course":
+				cmd_updatecourse(db, s)
+
+			default:
+				log.Print("Update commands: course")
+			}
+
 		default:
 			log.Print("Invalid command, type \"help\" for a list of commands")
 			continue
 		}
 	}
 	log.Print("Bye")
+}
+
+func cmd_removestudent(db *redis.Client, s *scanner.Scanner) {
+	// get email address
+	email, err := getValidEmail(s, studentEmailSuffix)
+	if err != nil {
+		return
+	}
+
+	// get course tag
+	tag, err := getNonEmptyString(s, "course tag")
+	if err != nil {
+		return
+	}
+
+	_, err = db.Call("evalsha", luaScripts["removestudentfromcourse"], 0, email, tag).Str()
+	if err != nil {
+		log.Printf("DB error removing student: %v", err)
+	}
+}
+
+func cmd_updatecourse(db *redis.Client, s *scanner.Scanner) {
+	// get the file name for the CSV file
+	filename, err := getNonEmptyString(s, "file name")
+	if err != nil {
+		return
+	}
+
+	// open and parse the file
+	fp, err := os.Open(filename)
+	if err != nil {
+		log.Printf("Error opening CSV file: %v", err)
+		return
+	}
+	defer fp.Close()
+	reader := csv.NewReader(fp)
+	reader.TrailingComma = true
+	records, err := reader.ReadAll()
+	if err != nil {
+		log.Printf("Error parsing CSV file: %v", err)
+		return
+	}
+	if len(records) < 3 {
+		log.Printf("File does not seem to contain any students")
+		return
+	}
+
+	// throw away the header lines
+	records = records[2:]
+
+	// create a student record for each one
+	students := make(map[string]string)
+	course := ""
+	for _, student := range records {
+		if len(student) < 3 {
+			log.Printf("Student record with too few fields: %v", student)
+			return
+		}
+		name, id, section := student[0], student[1], student[2]
+
+		// make sure this is a known course
+		exists, err := db.Hexists("index:courses:tagbycanvastag", section).Bool()
+		if err != nil {
+			log.Printf("Error checking for course tag for %s: %v", section, err)
+			return
+		}
+		if !exists {
+			// prompt for the dmail address to go with this student
+			line, err := prompt(fmt.Sprintf("Course tag for %s? ", section))
+			if err != nil {
+				return
+			}
+
+			tag, err := getNonEmptyString(line, "tag")
+			if err != nil {
+				return
+			}
+
+			exists, err := db.Sismember("index:courses:active", tag).Bool()
+			if err != nil {
+				log.Printf("Error checking for course %s: %v", tag, err)
+				return
+			}
+			if !exists {
+				log.Printf("%s is not an active course", tag)
+				return
+			}
+
+			_, err = db.Hset("index:courses:tagbycanvastag", section, tag).Int()
+			if err != nil {
+				log.Printf("Error setting mapping of Canvas ID -> tag: %v", err)
+				return
+			}
+		}
+		tag, err := db.Hget("index:courses:tagbycanvastag", section).Str()
+		if err != nil {
+			log.Printf("Error getting tag for course %s: %v", section, err)
+			return
+		}
+		if course == "" {
+			course = tag
+		} else if course != "" && tag != course {
+			log.Printf("Error: two courses found, %s and %s", course, tag)
+			return
+		}
+
+		// see if we know the email address for this student
+		exists, err = db.Hexists("index:students:emailbyid", id).Bool()
+		if err != nil {
+			log.Printf("Error checking for student ID %s for student %s: %v", id, name, err)
+			return
+		}
+		if !exists {
+			// prompt for the dmail address to go with this student
+			line, err := prompt(fmt.Sprintf("Email (NOT include @dmail.dixie.edu) for %s (%s)? ", name, id))
+			if err != nil {
+				return
+			}
+
+			email, err := getNonEmptyString(line, "email")
+			if err != nil {
+				return
+			}
+
+			// sanity check
+			email = strings.ToLower(email)
+			for _, ch := range email {
+				if !unicode.IsLower(ch) && !unicode.IsDigit(ch) {
+					log.Printf("Invalid character found in email: %#v", ch)
+					return
+				}
+			}
+			email = email + studentEmailSuffix
+
+			// write an entry to the db
+			_, err = db.Hset("index:students:emailbyid", id, email).Int()
+			if err != nil {
+				log.Printf("Error setting id -> email mapping: %v", err)
+			}
+		}
+
+		// get the email address
+		email, err := db.Hget("index:students:emailbyid", id).Str()
+		if err != nil {
+			log.Printf("Error getting student email address for %s (%s): %v", name, id, err)
+			return
+		}
+
+		// note the students we have found
+		students[email] = name
+
+		// add this student to the course
+		result, err := db.Call("evalsha", luaScripts["addstudenttocourse"], 0, email, name, tag).Str()
+		if err != nil {
+			log.Printf("DB error adding student to course: %v", err)
+			return
+		}
+
+		if result == "noop" {
+			log.Printf("Student %s (%s) skipped", name, email)
+		} else {
+			log.Printf("Student %s (%s) added to %s", name, email, tag)
+		}
+	}
+	if course == "" {
+		log.Printf("Error: no course found")
+		return
+	}
+
+	// check for students that were not in the list
+	roll, err := db.Smembers("course:" + course + ":students").List()
+	if err != nil {
+		log.Printf("Error getting list of students in course %s: %v", course, err)
+		return
+	}
+	for _, elt := range roll {
+		if _, present := students[elt]; !present {
+			log.Printf("Warning: student %s is in %s but not in this CSV file", elt, course)
+		}
+	}
+}
+
+func prompt(s string) (*scanner.Scanner, error) {
+	fmt.Print(s)
+	line, err := stdin.ReadString('\n')
+	if err != nil {
+		if err != io.EOF {
+			log.Print("Error reading from keyboard: ", err)
+		}
+		return nil, err
+	}
+
+	conf := &scanner.Scanner{}
+	return conf.Init(strings.NewReader(line)), nil
 }
 
 func cmd_listinstructors(db *redis.Client) {
@@ -212,7 +423,7 @@ func cmd_createinstructor(db *redis.Client, s *scanner.Scanner) {
 	// createinstructor "email@dixie.edu" "Full Name"
 
 	// get email
-	email, err := getValidEmail(s)
+	email, err := getValidEmail(s, instructorEmailSuffix)
 	if err != nil {
 		return
 	}
@@ -254,7 +465,7 @@ func cmd_createcourse(db *redis.Client, s *scanner.Scanner) {
 	}
 
 	// get instructor email
-	email, err := getValidEmail(s)
+	email, err := getValidEmail(s, instructorEmailSuffix)
 	if err != nil {
 		return
 	}
@@ -345,7 +556,7 @@ func parseTime(s *scanner.Scanner) (t time.Time, err error) {
 	return
 }
 
-func getValidEmail(s *scanner.Scanner) (email string, err error) {
+func getValidEmail(s *scanner.Scanner, suffix string) (email string, err error) {
 	// get email
 	if tok := s.Scan(); tok != scanner.String {
 		log.Print("Invalid string for email")
@@ -363,9 +574,9 @@ func getValidEmail(s *scanner.Scanner) (email string, err error) {
 			return "", fmt.Errorf("Invalid character in email")
 		}
 	}
-	if !strings.HasSuffix(email, "@dixie.edu") {
-		log.Print("Email must be @dixie.edu")
-		return "", fmt.Errorf("Must be @dixie.edu")
+	if !strings.HasSuffix(email, suffix) {
+		log.Printf("Email must be %s", suffix)
+		return "", fmt.Errorf("Must be %s", suffix)
 	}
 	if strings.Count(email, "@") != 1 {
 		log.Print("Email can only contain one @ character")
@@ -376,14 +587,18 @@ func getValidEmail(s *scanner.Scanner) (email string, err error) {
 }
 
 func getValidTag(s *scanner.Scanner) (tag string, err error) {
-	if tok := s.Scan(); tok != scanner.String {
+	tok := s.Scan()
+	if tok != scanner.String && tok != scanner.Ident {
 		log.Print("Invalid string for tag name")
 		return
 	}
-	tag, err = strconv.Unquote(s.TokenText())
-	if err != nil {
-		log.Printf("String error for tag name: %v", err)
-		return "", err
+	tag = s.TokenText()
+	if tok == scanner.String {
+		tag, err = strconv.Unquote(tag)
+		if err != nil {
+			log.Printf("String error for tag name: %v", err)
+			return "", err
+		}
 	}
 	if len(tag) == 0 {
 		log.Print("Tag cannot be an empty string")
@@ -400,14 +615,18 @@ func getValidTag(s *scanner.Scanner) (tag string, err error) {
 }
 
 func getNonEmptyString(s *scanner.Scanner, fieldName string) (elt string, err error) {
-	if tok := s.Scan(); tok != scanner.String {
+	tok := s.Scan()
+	if tok != scanner.String && tok != scanner.Ident {
 		log.Printf("Did not find string for %s field", fieldName)
 		return "", fmt.Errorf("String not found")
 	}
-	elt, err = strconv.Unquote(s.TokenText())
-	if err != nil {
-		log.Printf("String error for %s field: %v", fieldName, err)
-		return "", err
+	elt = s.TokenText()
+	if tok == scanner.String {
+		elt, err = strconv.Unquote(elt)
+		if err != nil {
+			log.Printf("String error for %s field: %v", fieldName, err)
+			return "", err
+		}
 	}
 	elt = strings.TrimSpace(elt)
 	if len(elt) == 0 {

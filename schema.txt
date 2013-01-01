@@ -21,6 +21,7 @@ student:uname@dmail.dixie.edu:oldcourses - set of inactive courses
 student:uname@dmail.dixie.edu:solutions:cs1410-s12-10am - hash of assignments -> solutions
 index:students:active - set of all students with active courses
 index:students:inactive - set of all students with no active courses
+index:students:emailbyid - hash of email addresses by Canvas ID
 
 course:cs1410-s10-10am:name - full name of the course
 course:cs1410-s10-10am:close - date when the course becomes inactive
@@ -32,6 +33,7 @@ course:cs1410-s10-10am:assignments:past - set of closed assignments for this cou
 index:courses:active - set of all active courses
 index:courses:inactive - set of all inactive courses
 index:courses:activebyclose - sorted set of active courses by close date
+index:courses:tagbycanvastag - hash of Canvas tags to normal tag
 
 assignment:789:course - tag of course
 assignment:789:problem - ID number of problem
