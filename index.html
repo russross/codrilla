@@ -22,7 +22,6 @@
 				$('#user').text('logging in...');
 				$.ajax({
 					type: 'POST',
-					headers: { 'Pragma': 'dev' },
 					url: '/auth/login/browserid',
 					dataType: 'json',
 					data: { Assertion: assertion },
@@ -33,7 +32,7 @@
 					error: function(res, status, xhr) {
 						$('#user').empty();
 						$('#login').show();
-						console.log("login failure");
+						console.log('login failure');
 						console.log(res);
 					}
 				});
@@ -42,10 +41,16 @@
 				$('#logout').hide();
 				$.ajax({
 					type: 'POST',
-					headers: { 'Authorization': 'Bearer ' + token, 'Pragma': 'dev' },
 					url: '/auth/logout',
-					success: function(res, status, xhr) { window.location.reload(); },
-					error: function(res, status, xhr) { alert("logout failure" + res); }
+					success: function(res, status, xhr) {
+						$('#user').empty();
+						$('#login').show();
+						$('#logout').hide();
+					},
+					error: function(res, status, xhr) {
+						console.log('logout failure');
+						console.log(res);
+					}
 				});
 			} 
 		});

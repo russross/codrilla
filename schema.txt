@@ -31,6 +31,7 @@ course:cs1410-s10-10am:close - date when the course becomes inactive
 course:cs1410-s10-10am:instructors - set of instructors
 course:cs1410-s10-10am:students - set of students
 course:cs1410-s10-10am:assignments:future - set of unavailable assignments for this course
+course:cs1410-s10-10am:assignments:futurebyopen - sorted set of future assignments for this course, sorted by open time
 course:cs1410-s10-10am:assignments:active - set of current assignments for this course
 course:cs1410-s10-10am:assignments:past - set of closed assignments for this course
 index:courses:active - set of all active courses

@@ -6,10 +6,8 @@ import (
 	"fmt"
 	"github.com/russross/radix/redis"
 	"io"
-	"io/ioutil"
 	"log"
 	"os"
-	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -18,27 +16,13 @@ import (
 	"unicode"
 )
 
-// preferred time zone
-var tz *time.Location
-
-// map from filenames to sha1 hashes of all scripts that are loaded
-var luaScripts = make(map[string]string)
-
 // global stdin reader
 var stdin *bufio.Reader
 
-const scriptPath = "scripts"
 const studentEmailSuffix = "@dmail.dixie.edu"
 const instructorEmailSuffix = "@dixie.edu"
 
 func shellmain() {
-	// initialize time
-	zone, err := time.LoadLocation("America/Denver")
-	if err != nil {
-		log.Fatal("Loading time zone: ", err)
-	}
-	tz = zone
-
 	// connect to redis
 	config := redis.DefaultConfig()
 	db := redis.NewClient(config)
@@ -46,44 +30,7 @@ func shellmain() {
 	// set up Lua scripts
 	log.Print("Codrilla interactive shell")
 	log.Println()
-	loadScripts(db, scriptPath)
 	shell(db)
-}
-
-func loadScripts(db *redis.Client, path string) {
-	names, err := filepath.Glob(path + "/*.lua")
-	if err != nil {
-		log.Fatalf("Failed to get list of Lua scripts: %v", err)
-	}
-
-	count := 0
-	for _, name := range names {
-		_, key := filepath.Split(name)
-		key = key[:len(key)-len(".lua")]
-
-		var contents []byte
-		if contents, err = ioutil.ReadFile(name); err != nil {
-			log.Fatalf("Failed to load script %s: %v", name, err)
-		}
-
-		var reply *redis.Reply
-		if reply = db.Call("script", "load", contents); reply.Err != nil {
-			log.Fatalf("Failed to load script %s into redis: %v", name, err)
-		}
-
-		if luaScripts[key], err = reply.Str(); err != nil {
-			log.Fatalf("DB error loading script %s: %v", name, err)
-		}
-		count++
-	}
-	log.Printf("Loaded %d Lua scripts", count)
-}
-
-func cron(db *redis.Client) {
-	now := time.Now().Unix()
-	if _, err := db.Call("evalsha", luaScripts["cron"], 0, now).Str(); err != nil {
-		log.Printf("Error running cron job: %v", err)
-	}
 }
 
 func shell(db *redis.Client) {
@@ -106,8 +53,6 @@ mainloop:
 			log.Print("Invalid command, type \"help\" for a list of commands")
 			continue
 		}
-
-		cron(db)
 
 		switch s.TokenText() {
 		case "help":
@@ -419,8 +364,8 @@ func cmd_listcourse(db *redis.Client, s *scanner.Scanner) {
 			log.Printf("DB error getting closing timestamp: %v", err)
 			return
 		}
-		now := time.Now().In(tz)
-		closetime := time.Unix(unix, 0).In(tz)
+		now := time.Now().In(timeZone)
+		closetime := time.Unix(unix, 0).In(timeZone)
 		if active {
 			fmt.Printf("Course will close at %v (%v)\n", closetime, closetime.Sub(now))
 		} else {
@@ -593,10 +538,10 @@ func parseTime(s *scanner.Scanner) (t time.Time, err error) {
 	}
 
 	if dayonly {
-		t = time.Date(t.Year(), t.Month(), t.Day(), 23, 59, 59, 0, tz)
+		t = time.Date(t.Year(), t.Month(), t.Day(), 23, 59, 59, 0, timeZone)
 	} else {
 		t = time.Date(t.Year(), t.Month(), t.Day(),
-			t.Hour(), t.Minute(), t.Second(), 0, tz)
+			t.Hour(), t.Minute(), t.Second(), 0, timeZone)
 	}
 
 	// make sure the time is sane

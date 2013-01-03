@@ -14,6 +14,7 @@ for index, id in ipairs(lst) do
 	redis.call('zadd', 'index:assignments:activebyclose', close, id)
 	redis.call('smove', 'course:'..course..':assignments:future',
 						'course:'..course..':assignments:active', id)
+	redis.call('zrem', 'course:'..course..':assignments:futurebyopen', id)
 end
 redis.call('zremrangebyscore', 'index:assignments:futurebyopen', '-inf', now)
 

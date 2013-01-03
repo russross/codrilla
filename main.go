@@ -5,13 +5,12 @@ import (
 	"compress/gzip"
 	"encoding/json"
 	"fmt"
-	"github.com/gorilla/pat"
 	"github.com/gorilla/sessions"
 	"github.com/vmihailenco/redis"
 	"io/ioutil"
 	"log"
 	"net/http"
-	"net/url"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -31,10 +30,14 @@ type Config struct {
 }
 
 const configFile = "config.json"
+const scriptPath = "scripts"
 
 var config Config
 var timeZone *time.Location
 var store sessions.Store
+
+// map from filenames to sha1 hashes of all scripts that are loaded
+var luaScripts = make(map[string]string)
 
 func main() {
 	// load config
@@ -55,10 +58,6 @@ func main() {
 	store = sessions.NewCookieStore([]byte(config.SessionSecret))
 
 	// set up web server
-	r := pat.New()
-	r.Add("POST", `/auth/login/browserid`, handlerNoAuth(auth_login_browserid))
-
-	http.Handle("/auth/", r)
 	http.Handle("/css/", http.StripPrefix("/css", http.FileServer(http.Dir("css"))))
 	http.Handle("/js/", http.StripPrefix("/js", http.FileServer(http.Dir("js"))))
 	http.Handle("/img/", http.StripPrefix("/img", http.FileServer(http.Dir("img"))))
@@ -66,136 +65,126 @@ func main() {
 		http.ServeFile(w, r, "index.html")
 	})
 
+	// load Lua scripts
+	db := redis.NewTCPClient(config.RedisHost, config.RedisPassword, config.RedisDB)
+	defer db.Close()
+	loadScripts(db, scriptPath)
+
 	log.Fatal(http.ListenAndServe(":8080", nil))
+}
+
+func cron(db *redis.Client) error {
+	now := fmt.Sprintf("%d", time.Now().In(timeZone).Unix())
+	if err := db.EvalSha(luaScripts["cron"], nil, []string{now}).Err(); err != nil {
+		log.Printf("Error running cron job: %v", err)
+		return err
+	}
+
+	return nil
 }
 
 type handlerNoAuth func(http.ResponseWriter, *http.Request, *redis.Client, *sessions.Session)
 
 func (h handlerNoAuth) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	// get the session (or create a new one)
+	session, _ := store.Get(r, "codrilla-session")
+
 	// get a db connection
 	db := redis.NewTCPClient(config.RedisHost, config.RedisPassword, config.RedisDB)
 	defer db.Close()
-
-	// get the session (or create a new one)
-	session, _ := store.Get(r, "codrilla-session")
+	if err := cron(db); err != nil {
+		http.Error(w, "DB error running cron updates", http.StatusInternalServerError)
+		return
+	}
 
 	// call the handler
 	h(w, r, db, session)
 }
 
-func auth_login_browserid(w http.ResponseWriter, r *http.Request, db *redis.Client, session *sessions.Session) {
-	// get the assertion from the submitted form data
-	assertion := strings.TrimSpace(r.FormValue("Assertion"))
-	if assertion == "" {
-		http.Error(w, "Missing BrowserID Assertion", http.StatusBadRequest)
+type handlerAdmin func(http.ResponseWriter, *http.Request, *redis.Client, *sessions.Session)
+
+func (h handlerAdmin) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	// get the session (or create a new one)
+	session, _ := store.Get(r, "codrilla-session")
+
+	// get a db connection
+	db := redis.NewTCPClient(config.RedisHost, config.RedisPassword, config.RedisDB)
+	defer db.Close()
+	if err := cron(db); err != nil {
+		http.Error(w, "DB error running cron updates", http.StatusInternalServerError)
 		return
 	}
 
-	// check for a successful login
-	email, err := browserid_verify(assertion)
-	if err != nil {
-		http.Error(w, "Error while verifying BrowserID login: "+err.Error(), http.StatusInternalServerError)
-		return
-	}
-	if email == "" {
-		http.Error(w, "Login failed", http.StatusForbidden)
+	// verify that the user is logged in
+	if err := checkSession(db, session); err != nil {
+		http.Error(w, err.Error(), http.StatusForbidden)
 		return
 	}
 
-	log.Printf("BrowserID login for [%s]", email)
+	// check that the user is logged in as an admin
+	if session.Values["role"] != "admin" {
+		log.Printf("Call to %s by non-admin", r.URL.Path)
+		http.Error(w, "Must be logged in as an administrator", http.StatusForbidden)
+		return
+	}
 
-	// create a login session cookie
-	createLoginSession(w, r, db, session, email)
+	// call the handler
+	h(w, r, db, session)
 }
 
-func createLoginSession(w http.ResponseWriter, r *http.Request, db *redis.Client, session *sessions.Session, email string) {
-	// start by assuming this is a student
-	role := "student"
+type handlerInstructor func(http.ResponseWriter, *http.Request, *redis.Client, *sessions.Session)
 
-	// is this an instructor?
-	b := db.SIsMember("index:instructors:all", email)
-	if err := b.Err(); err != nil {
-		log.Printf("DB error checking if user %s is an instructor: %v", email, err)
-		http.Error(w, "Database error checking if user is an instructor", http.StatusInternalServerError)
+func (h handlerInstructor) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	// get the session (or create a new one)
+	session, _ := store.Get(r, "codrilla-session")
+
+	// get a db connection
+	db := redis.NewTCPClient(config.RedisHost, config.RedisPassword, config.RedisDB)
+	defer db.Close()
+	if err := cron(db); err != nil {
+		http.Error(w, "DB error running cron updates", http.StatusInternalServerError)
 		return
 	}
-	if b.Val() {
-		role = "instructor"
-	}
 
-	// is this an admin?
-	b = db.SIsMember("index:administrators", email)
-	if err := b.Err(); err != nil {
-		log.Printf("DB error checking if user %s is an administrator: %v", email, err)
-		http.Error(w, "Database error checking if user is an administrator", http.StatusInternalServerError)
+	// verify that the user is logged in
+	if err := checkSession(db, session); err != nil {
+		http.Error(w, err.Error(), http.StatusForbidden)
 		return
 	}
-	if b.Val() {
-		role = "admin"
+
+	// check that the user is logged in as an instructor or admin
+	if session.Values["role"] != "admin" && session.Values["role"] != "instructor" {
+		log.Printf("Call to %s by non-instructor", r.URL.Path)
+		http.Error(w, "Must be logged in as an instructor", http.StatusForbidden)
+		return
 	}
 
-	session.Values["role"] = role
-	session.Values["email"] = email
-
-	// compute an expiration time
-	// we'll set it to 30 days, but set it to 4:00am
-	// so it is unlikely to expire while someone is working
-	now := time.Now().In(timeZone)
-	expires := time.Date(now.Year(), now.Month(), now.Day()+30, 4, 0, 0, 0, timeZone)
-	session.Values["expires"] = expires.Unix()
-	session.Save(r, w)
-
-	//http.Redirect(w, r, "/", http.StatusFound)
-	writeJson(w, r, map[string]string{"Email": email})
+	// call the handler
+	h(w, r, db, session)
 }
 
-type BrowserIDVerificationResponse struct {
-	Status   string
-	Email    string
-	Audience string
-	Expires  int64
-	Issuer   string
-	Reason   string
-}
+type handlerStudent func(http.ResponseWriter, *http.Request, *redis.Client, *sessions.Session)
 
-func browserid_verify(assertion string) (email string, err error) {
-	// try to verify the assertion with the Persona server
-	resp, err := http.PostForm(
-		config.BrowserIDVerifyURL,
-		url.Values{
-			"assertion": {assertion},
-			"audience":  {config.BrowserIDAudience},
-		})
+func (h handlerStudent) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	// get the session (or create a new one)
+	session, _ := store.Get(r, "codrilla-session")
 
-	if err != nil {
-		log.Printf("Failure contacting BrowserID verification server: %v", err)
-		return "", fmt.Errorf("Failure contacting verification server: %v", err)
-	}
-	defer resp.Body.Close()
-
-	// decode the body
-	verify := new(BrowserIDVerificationResponse)
-	if err = json.NewDecoder(resp.Body).Decode(verify); err != nil {
-		log.Printf("Failure decoding BrowserID verification: %v", err)
-		return "", fmt.Errorf("Failure decoding verification: %v", err)
-	}
-	if verify.Status == "failure" {
-		log.Printf("Failed BrowserID login: %s", verify.Reason)
-		return "", nil
-	} else if verify.Status != "okay" {
-		log.Printf("Failed BrowserID login with unknown status: %s", verify.Status)
-		return "", fmt.Errorf("Failed with unknown verification status: %s", verify.Status)
+	// get a db connection
+	db := redis.NewTCPClient(config.RedisHost, config.RedisPassword, config.RedisDB)
+	defer db.Close()
+	if err := cron(db); err != nil {
+		http.Error(w, "DB error running cron updates", http.StatusInternalServerError)
+		return
 	}
 
-	// sanity checks
-	if !strings.Contains(verify.Email, "@") {
-		return "", fmt.Errorf("Invalid email address from BrowserID login: [%s]", verify.Email)
-	}
-	if verify.Audience != config.BrowserIDAudience {
-		return "", fmt.Errorf("Wrong BrowserID audience: [%s] instead of [%s]", verify.Audience, config.BrowserIDAudience)
+	// verify that the user is logged in
+	if err := checkSession(db, session); err != nil {
+		http.Error(w, err.Error(), http.StatusForbidden)
+		return
 	}
 
-	return strings.ToLower(verify.Email), nil
+	// call the handler
+	h(w, r, db, session)
 }
 
 func writeJson(w http.ResponseWriter, r *http.Request, elt interface{}) {
@@ -228,4 +217,31 @@ func writeJson(w http.ResponseWriter, r *http.Request, elt interface{}) {
 		log.Printf("Output truncated")
 		http.Error(w, "Output truncated", http.StatusInternalServerError)
 	}
+}
+
+func loadScripts(db *redis.Client, path string) {
+	names, err := filepath.Glob(path + "/*.lua")
+	if err != nil {
+		log.Fatalf("Failed to get list of Lua scripts: %v", err)
+	}
+
+	count := 0
+	for _, name := range names {
+		_, key := filepath.Split(name)
+		key = key[:len(key)-len(".lua")]
+
+		var contents []byte
+		if contents, err = ioutil.ReadFile(name); err != nil {
+			log.Fatalf("Failed to load script %s: %v", name, err)
+		}
+
+		reply := db.ScriptLoad(string(contents))
+		if err := reply.Err(); err != nil {
+			log.Fatalf("Failed to load script %s into redis: %v", name, err)
+		}
+
+		luaScripts[key] = reply.Val()
+		count++
+	}
+	log.Printf("Loaded %d Lua scripts", count)
 }
