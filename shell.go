@@ -432,7 +432,7 @@ func cmd_listcourse(db *redis.Client, s *scanner.Scanner) {
 	}
 
 	// list the active assignments
-	
+
 }
 
 func cmd_listinstructors(db *redis.Client) {

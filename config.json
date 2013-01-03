@@ -1,0 +1,12 @@
+{
+	"TimeZoneName":		"America/Denver",
+	"SessionSecret":	"Art1san R0bot Sp3ct@cles",
+	"CompressionThreshold": 1024,
+
+	"RedisHost": "localhost:6379",
+	"RedisPassword": "",
+	"RedisDB": -1,
+
+	"BrowserIDVerifyURL": "https://verifier.login.persona.org/verify",
+	"BrowserIDAudience": "http://localhost:8080"
+}

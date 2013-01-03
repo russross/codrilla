@@ -10,18 +10,20 @@ problem:123:tags - set of tags (lower case)
 problem:123:usedby - set of courses using this problem
 index:problems:all - set of all problems
 
+index:administrators - set of administrative users
+
 instructor:uname@dixie.edu:name
 instructor:uname@dixie.edu:courses - set of current, active course tags
 instructor:uname@dixie.edu:oldcourses - set of inactive courses
 index:instructors:active - set of all instructors with active courses
-index:instructors:inactive - set of all instructors with no active courses
+index:instructors:all - set of all instructors (including those with no active courses)
 
 student:uname@dmail.dixie.edu:name
 student:uname@dmail.dixie.edu:courses - set of current, active course tags
 student:uname@dmail.dixie.edu:oldcourses - set of inactive courses
 student:uname@dmail.dixie.edu:solutions:cs1410-s12-10am - hash of assignments -> solutions
 index:students:active - set of all students with active courses
-index:students:inactive - set of all students with no active courses
+index:students:all - set of all students (including those with no active courses)
 index:students:emailbyid - hash of email addresses by Canvas ID
 
 course:cs1410-s10-10am:name - full name of the course
@@ -32,7 +34,7 @@ course:cs1410-s10-10am:assignments:future - set of unavailable assignments for t
 course:cs1410-s10-10am:assignments:active - set of current assignments for this course
 course:cs1410-s10-10am:assignments:past - set of closed assignments for this course
 index:courses:active - set of all active courses
-index:courses:inactive - set of all inactive courses
+index:courses:all - set of all active and inactive courses
 index:courses:activebyclose - sorted set of active courses by close date
 index:courses:tagbycanvastag - hash of Canvas tags to normal tag
 

@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Home</title>
+  <script src="//login.persona.org/include.js"></script>
+  <script src="//ajax.googleapis.com/ajax/libs/jquery/1.8.3/jquery.min.js"></script>
+</head>
+<body>
+  <p>User:
+	<span id="user"></span><a id="login" href="#">Login</a>
+	<a id="logout" href="#">Logout</a>
+  </p>
+  <script>
+	jQuery(function ($) {
+		$('#logout').hide();
+
+		// login handling
+		navigator.id.watch({
+			loggedInUser: null,
+			onlogin: function(assertion) {
+				$('#login').hide();
+				$('#user').text('logging in...');
+				$.ajax({
+					type: 'POST',
+					headers: { 'Pragma': 'dev' },
+					url: '/auth/login/browserid',
+					dataType: 'json',
+					data: { Assertion: assertion },
+					success: function(res, status, xhr) {
+						$('#user').text(res.Email);
+						$('#logout').show();
+					},
+					error: function(res, status, xhr) {
+						$('#user').empty();
+						$('#login').show();
+						console.log("login failure");
+						console.log(res);
+					}
+				});
+			},
+			onlogout: function() {
+				$('#logout').hide();
+				$.ajax({
+					type: 'POST',
+					headers: { 'Authorization': 'Bearer ' + token, 'Pragma': 'dev' },
+					url: '/auth/logout',
+					success: function(res, status, xhr) { window.location.reload(); },
+					error: function(res, status, xhr) { alert("logout failure" + res); }
+				});
+			} 
+		});
+		$('#login').click(function () {
+			navigator.id.request();
+			return false;
+		});
+		$('#logout').click(function () {
+			navigator.id.logout();
+			return false;
+		});
+	});
+  </script>
+</body>
+</html>
