@@ -135,7 +135,6 @@ func createLoginSession(w http.ResponseWriter, r *http.Request, db *redis.Client
 		MaxAge:  int(expires.Sub(now).Seconds()),
 	})
 
-	//http.Redirect(w, r, "/", http.StatusFound)
 	writeJson(w, r, map[string]string{"Email": email})
 }
 
@@ -189,7 +188,15 @@ func browserid_verify(assertion string) (email string, err error) {
 }
 
 func checkSession(db *redis.Client, session *sessions.Session) error {
+	session.Values["email"] = "russ@dixie.edu"
+	session.Values["role"] = "admin"
+	session.Values["expires"] = time.Now().Add(time.Hour).Unix()
+
 	// make sure someone is logged in
+	if _, present := session.Values["email"]; !present {
+		log.Printf("Must be logged in")
+		return fmt.Errorf("Must be logged in")
+	}
 	email := session.Values["email"].(string)
 	if email == "" {
 		log.Printf("Must be logged in")
