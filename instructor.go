@@ -18,7 +18,6 @@ func init() {
 
 type CSVStudent struct {
 	Name  string
-	ID    string
 	Email string
 }
 
@@ -27,6 +26,7 @@ type CSVUploadResult struct {
 	Message                string
 	UnknownCanvasCourseTag string
 	UnknownStudents        []string
+	PossibleDrops          []*CSVStudent
 	Log                    []string
 }
 
@@ -37,6 +37,7 @@ func instructor_upload_courselist(w http.ResponseWriter, r *http.Request, db *re
 	result := &CSVUploadResult{
 		Success:         true,
 		UnknownStudents: []string{},
+		PossibleDrops:   []*CSVStudent{},
 		Log:             []string{},
 	}
 
@@ -201,8 +202,12 @@ func instructor_upload_courselist(w http.ResponseWriter, r *http.Request, db *re
 	}
 	roll := slice.Val()
 	for _, elt := range roll {
-		if _, present := emailToName[elt]; !present {
-			result.Log = append(result.Log, fmt.Sprintf("Student %s is in %s but not in this CSV file", elt, course))
+		if name, present := emailToName[elt]; !present {
+			drop := &CSVStudent{
+				Name:  name,
+				Email: elt,
+			}
+			result.PossibleDrops = append(result.PossibleDrops, drop)
 		}
 	}
 
