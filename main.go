@@ -163,6 +163,44 @@ func (h handlerInstructor) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	h(w, r, db, session)
 }
 
+type handlerInstructorJson func(http.ResponseWriter, *http.Request, *redis.Client, *sessions.Session, *json.Decoder)
+
+func (h handlerInstructorJson) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	// get the session (or create a new one)
+	session, _ := store.Get(r, "codrilla-session")
+
+	// get a db connection
+	db := redis.NewTCPClient(config.RedisHost, config.RedisPassword, config.RedisDB)
+	defer db.Close()
+	if err := cron(db); err != nil {
+		http.Error(w, "DB error running cron updates", http.StatusInternalServerError)
+		return
+	}
+
+	// verify that the user is logged in
+	if err := checkSession(db, session); err != nil {
+		http.Error(w, err.Error(), http.StatusForbidden)
+		return
+	}
+
+	// check that the user is logged in as an instructor or admin
+	if session.Values["role"] != "admin" && session.Values["role"] != "instructor" {
+		log.Printf("Call to %s by non-instructor", r.URL.Path)
+		http.Error(w, "Must be logged in as an instructor", http.StatusForbidden)
+		return
+	}
+
+	if !checkJsonRequest(w, r) {
+		return
+	}
+
+	decoder := json.NewDecoder(r.Body)
+	defer r.Body.Close()
+
+	// call the handler
+	h(w, r, db, session, decoder)
+}
+
 type handlerStudent func(http.ResponseWriter, *http.Request, *redis.Client, *sessions.Session)
 
 func (h handlerStudent) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -188,6 +226,12 @@ func (h handlerStudent) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func writeJson(w http.ResponseWriter, r *http.Request, elt interface{}) {
+	if !strings.Contains(r.Header.Get("Accept"), "application/json") &&
+		!strings.Contains(r.Header.Get("Accept"), "*/*") {
+		log.Printf("Accept header missing JSON: Accept is %s", r.Header.Get("Accept"))
+		http.Error(w, "Client does not accept JSON response; must include Accept: application/json in request", http.StatusBadRequest)
+		return
+	}
 	raw, err := json.MarshalIndent(elt, "", "    ")
 	if err != nil {
 		log.Printf("Error encoding result as JSON: %v", err)
@@ -244,4 +288,20 @@ func loadScripts(db *redis.Client, path string) {
 		count++
 	}
 	log.Printf("Loaded %d Lua scripts", count)
+}
+
+func checkJsonRequest(w http.ResponseWriter, r *http.Request) bool {
+	if r.Method != "POST" {
+		log.Printf("JSON request called with method %s", r.Method)
+		http.Error(w, "Not found", http.StatusNotFound)
+		return false
+	}
+
+	if r.Header.Get("Content-Type") != "application/json" {
+		log.Printf("JSON request called with Content-Type %s", r.Header.Get("Content-Type"))
+		http.Error(w, "Request must be in JSON format; must include Content-Type: appluication/json in request", http.StatusBadRequest)
+		return false
+	}
+
+	return true
 }

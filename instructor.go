@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/csv"
+	"encoding/json"
 	"fmt"
 	"github.com/gorilla/pat"
 	"github.com/gorilla/sessions"
@@ -12,7 +13,9 @@ import (
 
 func init() {
 	r := pat.New()
-	r.Add("POST", `/instructor/upload/courselist`, handlerInstructor(instructor_upload_courselist))
+	r.Add("POST", `/instructor/update/courselist`, handlerInstructor(instructor_update_courselist))
+	r.Add("POST", `/instructor/update/canvasmappings`, handlerInstructorJson(instructor_update_canvasmappings))
+	r.Add("POST", `/instructor/create/problem`, handlerInstructorJson(instructor_create_problem))
 	http.Handle("/instructor/", r)
 }
 
@@ -30,7 +33,7 @@ type CSVUploadResult struct {
 	Log                    []string
 }
 
-func instructor_upload_courselist(w http.ResponseWriter, r *http.Request, db *redis.Client, session *sessions.Session) {
+func instructor_update_courselist(w http.ResponseWriter, r *http.Request, db *redis.Client, session *sessions.Session) {
 	instructor := session.Values["email"].(string)
 	role := session.Values["email"].(string)
 
@@ -212,4 +215,96 @@ func instructor_upload_courselist(w http.ResponseWriter, r *http.Request, db *re
 	}
 
 	writeJson(w, r, result)
+}
+
+type CanvasImportHelpers struct {
+	CourseCanvasToTag map[string]string
+	StudentIDToEmail  map[string]string
+}
+
+func instructor_update_canvasmappings(w http.ResponseWriter, r *http.Request, db *redis.Client, session *sessions.Session, decoder *json.Decoder) {
+	helpers := new(CanvasImportHelpers)
+	if err := decoder.Decode(helpers); err != nil {
+		log.Printf("Failure decoding JSON request: %v", err)
+		http.Error(w, "Failure decoding JSON request", http.StatusBadRequest)
+		return
+	}
+	if helpers.CourseCanvasToTag == nil {
+		helpers.CourseCanvasToTag = make(map[string]string)
+	}
+	if helpers.StudentIDToEmail == nil {
+		helpers.StudentIDToEmail = make(map[string]string)
+	}
+
+	instructor := session.Values["email"].(string)
+
+	// add canvas course id -> our course tag mappings
+	for canvas, tag := range helpers.CourseCanvasToTag {
+		// is this a valid course tag?
+		b := db.SIsMember("index:courses:active", tag)
+		if b.Err() != nil {
+			log.Printf("DB error checking for active course: %v", b.Err())
+			http.Error(w, "DB error", http.StatusInternalServerError)
+			return
+		}
+		if !b.Val() {
+			log.Printf("Mapping not to an active course: %s", tag)
+			http.Error(w, "Canvas to tag not for an active course", http.StatusForbidden)
+			return
+		}
+
+		// is this user an instructor for that course
+		if b = db.SIsMember("course:"+tag+":instructors", instructor); b.Err() != nil {
+			log.Printf("DB error checking course for instructor: %v", b.Err())
+			http.Error(w, "DB error", http.StatusInternalServerError)
+			return
+		}
+		if !b.Val() {
+			log.Printf("Not an instructor for course %s: %s", tag, instructor)
+			http.Error(w, "Not an instructor for that course", http.StatusUnauthorized)
+			return
+		}
+
+		// set the mapping if it does not already exist
+		if b = db.HSetNX("index:courses:tagbycanvastag", canvas, tag); b.Err() != nil {
+			log.Printf("DB error setting course mapping: %v", b.Err())
+			http.Error(w, "DB error", http.StatusInternalServerError)
+			return
+		}
+		if !b.Val() {
+			log.Printf("Mapping already exists for %s", canvas)
+			http.Error(w, "Canvas tag is already mapped", http.StatusForbidden)
+			return
+		}
+
+		log.Printf("Mapping set for Canvas course %s -> %s", canvas, tag)
+	}
+
+	// add canvas student id -> email mappings
+	for canvas, email := range helpers.StudentIDToEmail {
+		// set the mapping if it does not already exist
+		b := db.HSetNX("index:students:emailbyid", canvas, email)
+		if b.Err() != nil {
+			log.Printf("DB error setting student mapping: %v", b.Err())
+			http.Error(w, "DB error", http.StatusInternalServerError)
+			return
+		}
+		if !b.Val() {
+			log.Printf("Mapping already exists for student %s (%s)", canvas, email)
+			http.Error(w, "Canvas student ID is already mapped", http.StatusForbidden)
+			return
+		}
+
+		log.Printf("Mapping set for Canvas student %s -> %s", canvas, email)
+	}
+}
+
+type Problem struct {
+	Name string
+	Type string
+	Tags []string
+	Data map[string]interface{}
+}
+
+func instructor_create_problem(w http.ResponseWriter, r *http.Request, db *redis.Client, session *sessions.Session, decoder *json.Decoder) {
 }

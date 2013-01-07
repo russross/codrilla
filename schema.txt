@@ -4,10 +4,12 @@ tag:foo:priority - int from 0 to 100, 90: course, 70: language, 50: subject, 30:
 index:tags:all - set of all tags
 index:tags:bypriority - sorted set of all tags by priority
 
-problem:123:data - JSON encoding of all problem data
 problem:123:name - brief description of this problem
+problem:123:type - evaluation type for this problem (python27:evallist)
 problem:123:tags - set of tags (lower case)
+problem:123:data - JSON encoding of all problem data
 problem:123:usedby - set of courses using this problem
+index:problems:types - set of recognized problem types
 index:problems:all - set of all problems
 
 index:administrators - set of administrative users
