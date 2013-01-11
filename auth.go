@@ -74,6 +74,7 @@ func auth_logout(w http.ResponseWriter, r *http.Request, db *redis.Client, sessi
 		Expires: expires,
 		MaxAge:  -1,
 	})
+	log.Printf("Logout")
 }
 
 func createLoginSession(w http.ResponseWriter, r *http.Request, db *redis.Client, session *sessions.Session, email string) {
