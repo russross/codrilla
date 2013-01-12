@@ -144,5 +144,5 @@ var Python27ExpressionDescription = &ProblemType{
 }
 
 func problem_listtypes(w http.ResponseWriter, r *http.Request, db *redis.Client, session *sessions.Session) {
-	writeJson(w, r, []*ProblemType{ Python27InputOutputDescription, Python27ExpressionDescription })
+	writeJson(w, r, []*ProblemType{Python27InputOutputDescription, Python27ExpressionDescription})
 }

@@ -87,6 +87,24 @@ jQuery(function ($) {
             if (field)
                 $('#newproblemspace').append(field);
         });
+
+        // create editors
+        $('#newproblemspace .markdowneditor').each(function (i, elt) {
+            CodeMirror.fromTextArea(elt, {
+                mode: 'markdown',
+                lineNumbers: true,
+                indentUnit: 4
+            });
+        });
+        $('#newproblemspace .pythoneditor').each(function (i, elt) {
+            var readonly = $(elt).hasClass('readonly');
+            CodeMirror.fromTextArea(elt, {
+                mode: 'python',
+                readOnly: readonly,
+                lineNumbers: true,
+                indentUnit: 4
+            });
+        });
     };
 
     var createProblemField = function (desc, content, role) {
@@ -102,10 +120,10 @@ jQuery(function ($) {
       
         // markdown editor
         if (desc.Type == 'markdown' && action == 'edit') {
-            var $editor = $('<textarea name="' + desc.Name + '" class="mdeditor" />');
-            var $div = $('<div/>').append($editor);
+            var $editor = $('<textarea name="' + desc.Name + '" class="markdowneditor" />');
+            var $div = $('<div />').append($editor);
             if (desc.Prompt)
-              $('<h2 />').text(desc.Prompt).prependTo($div);
+                $('<h2 />').text(desc.Prompt).prependTo($div);
             return $div;
         }
 
@@ -113,10 +131,45 @@ jQuery(function ($) {
         if (desc.Type == 'markdown' && action == 'view') {
             var md = content[desc.Name] || '*Warning! ' + desc.Name + ' missing*';
             var html = marked(md);
-            var $div = $('<div/>').html(html);
+            var $div = $('<div />').html(html);
             if (desc.Title)
-              $('<h2 />'.text(desc.Title).prependTo($div));
+                $('<h2 />'.text(desc.Title).prependTo($div));
             return $div;
+        }
+
+        // python editor/viewer
+        if (desc.Type == 'python' && (action == 'edit' || action == 'view')) {
+            var readonly = ' readonly';
+            if (action == 'edit') readonly = '';
+            var $editor = $('<textarea name="' + desc.Name + '" class="pythoneditor' + readonly + '" />');
+            var $div = $('<div />').append($editor);
+            if (desc.Prompt)
+                $('<h2 />').text(desc.Prompt).prependTo($div);
+            return $div;
+        }
+
+        // int editor
+        if (desc.Type == 'int' && action == 'edit') {
+            var $input = $('<input type="number" step="1" name="' + desc.Name + '" value="' + desc.Default + '">');
+            var $div = $('<div />').append($input);
+            if (desc.Prompt)
+                $('<h2 />').text(desc.Prompt).prependTo($div);
+            return $div;
+        }
+
+        // int viewer
+        if (desc.Type == 'int' && action == 'view') {
+            var $div = $('<div />');
+            var value = content[desc.Name] || 0;
+            if (desc.Title)
+                $('<h2 />').text(desc.Title + ': ' + value);
+            else
+                $('<h2 />').text(value);
+            return $div;
+        }
+
+        // textfilelist editor
+        if (desc.Type == 'textfilelist' && action == 'edit') {
         }
 
         return null;
