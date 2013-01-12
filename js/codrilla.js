@@ -170,9 +170,47 @@ jQuery(function ($) {
 
         // textfilelist editor
         if (desc.Type == 'textfilelist' && action == 'edit') {
+            var $div = $('<div />')
+              .append('<input type="hidden" class="numberednameholder" value="' + desc.Name + '">')
+              .append('<button class="btn btn-primary addtexteditor">Add</button>');
+            if (desc.Prompt)
+                $('<h2 />').text(desc.Prompt).prependTo($div);
+            return $div;
         }
 
         return null;
+    };
+
+    $('.closeparentdiv').live('click', function () {
+        $(this).closest('div').remove();
+        renumber();
+        return false;
+    });
+    $('.addtexteditor').live('click', function() {
+        var $editor = $('<textarea class="texteditor numbered" />');
+        var $inner = $('<div />')
+          .append('<hr />')
+          .append($editor)
+          .append('<button class="close closeparentdiv">&times;</button>');
+        $(this).closest('div').append($inner);
+
+        CodeMirror.fromTextArea($editor[0], {
+            mode: 'text',
+            lineNumbers: true,
+            indentUnit: 4
+        });
+
+        renumber();
+        return false;
+    });
+    var renumber = function () {
+        $('.numberednameholder').each(function (i, group) {
+            var name = $(this).val();
+            var $div = $(this).closest('div');
+            $div.find('.numbered').each(function (n, elt) {
+                elt.name = name + '.' + n;
+            });
+        });
     };
 
     var setupLoggedOut = function () {
