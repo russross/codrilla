@@ -87,24 +87,6 @@ jQuery(function ($) {
             if (field)
                 $('#newproblemspace').append(field);
         });
-
-        // create editors
-        $('#newproblemspace .markdowneditor').each(function (i, elt) {
-            CodeMirror.fromTextArea(elt, {
-                mode: 'markdown',
-                lineNumbers: true,
-                indentUnit: 4
-            });
-        });
-        $('#newproblemspace .pythoneditor').each(function (i, elt) {
-            var readonly = $(elt).hasClass('readonly');
-            CodeMirror.fromTextArea(elt, {
-                mode: 'python',
-                readOnly: readonly,
-                lineNumbers: true,
-                indentUnit: 4
-            });
-        });
     };
 
     var createProblemField = function (desc, content, role) {
@@ -120,8 +102,15 @@ jQuery(function ($) {
       
         // markdown editor
         if (desc.Type == 'markdown' && action == 'edit') {
-            var $editor = $('<textarea name="' + desc.Name + '" class="markdowneditor" />');
+            var $editor = $('<textarea name="' + desc.Name + '" class="stringfield" />');
             var $div = $('<div />').append($editor);
+            CodeMirror.fromTextArea($editor[0], {
+                mode: 'markdown',
+                lineNumbers: true,
+                indentUnit: 4,
+                change: function(cm) { $editor.val(cm.getValue()); }
+            });
+
             if (desc.Prompt)
                 $('<h2 />').text(desc.Prompt).prependTo($div);
             return $div;
@@ -139,10 +128,16 @@ jQuery(function ($) {
 
         // python editor/viewer
         if (desc.Type == 'python' && (action == 'edit' || action == 'view')) {
-            var readonly = ' readonly';
-            if (action == 'edit') readonly = '';
-            var $editor = $('<textarea name="' + desc.Name + '" class="pythoneditor' + readonly + '" />');
+            var $editor = $('<textarea name="' + desc.Name + '" class="stringfield" />');
             var $div = $('<div />').append($editor);
+            CodeMirror.fromTextArea($editor[0], {
+                mode: 'python',
+                readOnly: action == 'view',
+                lineNumbers: true,
+                indentUnit: 4,
+                change: function(cm) { $editor.val(cm.getValue()); }
+            });
+
             if (desc.Prompt)
                 $('<h2 />').text(desc.Prompt).prependTo($div);
             return $div;
@@ -150,7 +145,7 @@ jQuery(function ($) {
 
         // int editor
         if (desc.Type == 'int' && action == 'edit') {
-            var $input = $('<input type="number" step="1" name="' + desc.Name + '" value="' + desc.Default + '">');
+            var $input = $('<input type="number" step="1" min="1" name="' + desc.Name + '" value="' + desc.Default + '" class="intfield">');
             var $div = $('<div />').append($input);
             if (desc.Prompt)
                 $('<h2 />').text(desc.Prompt).prependTo($div);
@@ -171,8 +166,8 @@ jQuery(function ($) {
         // textfilelist editor
         if (desc.Type == 'textfilelist' && action == 'edit') {
             var $div = $('<div />')
-              .append('<input type="hidden" class="numberednameholder" value="' + desc.Name + '">')
-              .append('<button class="btn btn-primary addtexteditor">Add</button>');
+                .append('<input type="hidden" class="listnameholder" value="' + desc.Name + '">')
+                .append('<button class="btn btn-primary addtexteditor">Add</button>');
             if (desc.Prompt)
                 $('<h2 />').text(desc.Prompt).prependTo($div);
             return $div;
@@ -187,30 +182,57 @@ jQuery(function ($) {
         return false;
     });
     $('.addtexteditor').live('click', function() {
-        var $editor = $('<textarea class="texteditor numbered" />');
+        var name = $(this).closest('div').find('.listnameholder').val();
+        var $editor = $('<textarea name="' + name + '" class="stringlistfield" />');
         var $inner = $('<div />')
-          .append('<hr />')
-          .append($editor)
-          .append('<button class="close closeparentdiv">&times;</button>');
+            .append('<hr />')
+            .append($editor)
+            .append('<button class="close closeparentdiv">&times;</button>');
         $(this).closest('div').append($inner);
 
         CodeMirror.fromTextArea($editor[0], {
             mode: 'text',
             lineNumbers: true,
-            indentUnit: 4
+            change: function(cm) { $editor.val(cm.getValue()); }
         });
 
-        renumber();
         return false;
     });
-    var renumber = function () {
-        $('.numberednameholder').each(function (i, group) {
-            var name = $(this).val();
+
+    formToJson = function ($root) {
+        var o = {};
+
+        $root.find('.CodeMirror').each(function(i, elt) {
+            elt.CodeMirror.save();
+        });
+        $root.find('.stringfield').each(function () {
+            if (!this.name) {
+                console.log('Warning! formToJson found a stringfield without a name');
+                return;
+            }
+            o[this.name] = String(this.value);
+        });
+        $root.find('.intfield').each(function () {
+            if (!this.name) {
+                console.log('warning! formtojson found an intfield without a name');
+                return;
+            }
+            o[this.name] = Number(this.value);
+        });
+        $root.find('.listnameholder').each(function () {
+            var name = this.value;
+            if (!name) {
+                console.log('warning! formtojson found a listnameholder without a name');
+                return;
+            }
+            o[name] = [];
+
             var $div = $(this).closest('div');
-            $div.find('.numbered').each(function (n, elt) {
-                elt.name = name + '.' + n;
+            $div.find('.stringlistfield').each(function (i, elt) {
+                o[name].push(String(this.value));
             });
         });
+        return JSON.stringify(o);
     };
 
     var setupLoggedOut = function () {
