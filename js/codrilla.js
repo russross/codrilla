@@ -70,66 +70,122 @@ jQuery(function ($) {
 
         // get the problem type
         var kind = $('#problemtype').val();
-        var desc;
+        var fieldlist;
         $.each(CODRILLA.ProblemTypes, function (i, elt) {
             if (elt.Tag == kind)
-                desc = elt.Description;
+                fieldlist = elt.Description;
         });
-        if (!desc)
+        if (!fieldlist)
             return;
 
         // fill in the form
         var role = CODRILLA.Role;
         role = 'instructor';
         var content = {};
-        $.each(desc, function (i, elt) {
-            var field = createProblemField(elt, content, role);
-            if (field)
-                $('#newproblemspace').append(field);
-        });
+        var $editor = createEditor(fieldlist, content, role);
+        $editor.appendTo('#newproblemspace');
     };
 
-    var createProblemField = function (desc, content, role) {
+    var createEditor = function (description, contents, role) {
+        var $main = $('<div />');
+
+        // run through the list of fields
+        $.each(description, function (i, field) {
+            var action;
+            if (role == 'instructor')
+                action = field.Editor;
+            else if (role == 'student')
+                action == field.Student;
+            else {
+                console.log('createEditor failed with role =', role);
+                return null;
+            }
+            if (action == 'nothing') return;
+
+            if (field.List) {
+                var $div = $('<div />');
+                $div.data('field', field).data('role', role);
+
+                if (action == 'edit' && field.Prompt)
+                    $('<h2 />').text(field.Prompt).prependTo($div);
+                else if (action == 'view' && field.Title)
+                    $('<h2 />').text(field.Title).prependTo($div);
+                else
+                    $('<h2 />').text('Field prompt/description goes here').prependTo($div);
+
+                if (action == 'edit') $div.addClass('editorlist');
+                var value = contents[field.Name] || [field.Default];
+
+                $.each(value, function (i, onevalue) {
+                    var $elt = createEditorField(field, onevalue, role);
+                    if ($elt) {
+                        // delete the header and append an hrule
+                        $elt.find('h2').first().remove();
+                        if (action == 'edit')
+                            $elt.append('<button class="close closeparentdiv">&times;</button>');
+                        $elt.append('<hr>');
+                        if ($elt.hasClass('editorelt'))
+                            $elt.removeClass('editorelt').addClass('editorlistelt');
+                        $elt.appendTo($div);
+                    }
+                });
+                if (action == 'edit')
+                    $('<button class="btn btn-primary addeditorfield">Add</button>').appendTo($div);
+                $div.appendTo($main);
+            } else {
+                var value = contents[field.Name] || field.Default;
+                var $div = createEditorField(field, value, role);
+                if ($div) {
+                    $div.data('field', field).data('role', role);
+                    $div.appendTo($main);
+                }
+            }
+        });
+
+        return $main;
+    };
+
+    var createEditorField = function (field, value, role) {
         var action;
         if (role == 'instructor')
-            action = desc.Instructor;
+            action = field.Editor;
         else if (role == 'student')
-            action == desc.Student;
-        else
+            action == field.Student;
+        else {
+            console.log('createEditorField failed with role =', role);
             return null;
+        }
 
         if (action == 'nothing') return null;
       
-        // markdown editor
-        if (desc.Type == 'markdown' && action == 'edit') {
-            var $editor = $('<textarea name="' + desc.Name + '" class="stringfield" />');
-            var $div = $('<div />').append($editor);
+        var $div = $('<div />');
+        if (action == 'edit' && field.Prompt)
+            $('<h2 />').text(field.Prompt).prependTo($div);
+        else if (action == 'view' && field.Title)
+            $('<h2 />').text(field.Title).prependTo($div);
+        else
+            $('<h2 />').text('Field prompt/description goes here').prependTo($div);
+
+        if (field.Type == 'markdown' && action == 'edit') {
+            // markdown editor
+            var $editor = $('<textarea class="stringfield" />').val(value);
+            $div.append($editor);
             CodeMirror.fromTextArea($editor[0], {
                 mode: 'markdown',
                 lineNumbers: true,
                 indentUnit: 4,
                 change: function(cm) { $editor.val(cm.getValue()); }
             });
-
-            if (desc.Prompt)
-                $('<h2 />').text(desc.Prompt).prependTo($div);
-            return $div;
-        }
-
-        // markdown viewer
-        if (desc.Type == 'markdown' && action == 'view') {
-            var md = content[desc.Name] || '*Warning! ' + desc.Name + ' missing*';
-            var html = marked(md);
-            var $div = $('<div />').html(html);
-            if (desc.Title)
-                $('<h2 />'.text(desc.Title).prependTo($div));
-            return $div;
-        }
-
-        // python editor/viewer
-        if (desc.Type == 'python' && (action == 'edit' || action == 'view')) {
-            var $editor = $('<textarea name="' + desc.Name + '" class="stringfield" />');
-            var $div = $('<div />').append($editor);
+        } else if (field.Type == 'markdown' && action == 'view') {
+            // markdown viewer
+            var html = marked(value);
+            $('<div />').html(html).appendTo($div);
+        } else if (field.Type == 'python' && (action == 'edit' || action == 'view')) {
+            // python editor/viewer
+            var $editor = $('<textarea />');
+            if (action == 'edit')
+                $editor.addClass('stringfield');
+            $div.append($editor);
             CodeMirror.fromTextArea($editor[0], {
                 mode: 'python',
                 readOnly: action == 'view',
@@ -137,67 +193,68 @@ jQuery(function ($) {
                 indentUnit: 4,
                 change: function(cm) { $editor.val(cm.getValue()); }
             });
-
-            if (desc.Prompt)
-                $('<h2 />').text(desc.Prompt).prependTo($div);
-            return $div;
+        } else if (field.Type == 'text' && (action == 'edit' || action == 'view')) {
+            // text editor/viewer
+            var $editor = $('<textarea />');
+            if (action == 'edit')
+                $editor.addClass('stringfield');
+            $div.append($editor);
+            CodeMirror.fromTextArea($editor[0], {
+                mode: 'text',
+                readOnly: action == 'view',
+                lineNumbers: true,
+                indentUnit: 4,
+                change: function(cm) { $editor.val(cm.getValue()); }
+            });
+        } else if (field.Type == 'int' && action == 'edit') {
+            // int editor
+            var $input = $('<input type="number" step="1" min="1" class="intfield">').val(value || 1);
+            $div.append($input);
+        } else if ((field.Type == 'int' || field.Type == 'string') && action == 'view') {
+            // int / string viewer
+            $('<p />').text(value).appendTo($div);
+        } else if (field.Type == 'string' && action == 'edit') {
+            // string editor
+            var $input = $('<input type="text" class="stringfield">').val(value);
+            $div.append($input);
+        } else {
+            console.log('createEditorField: not implemented for Type =', field.Type, 'and action =', action);
+            return null;
         }
+        if (action == 'edit')
+            $div.addClass('editorelt');
 
-        // int editor
-        if (desc.Type == 'int' && action == 'edit') {
-            var $input = $('<input type="number" step="1" min="1" name="' + desc.Name + '" value="' + desc.Default + '" class="intfield">');
-            var $div = $('<div />').append($input);
-            if (desc.Prompt)
-                $('<h2 />').text(desc.Prompt).prependTo($div);
-            return $div;
-        }
-
-        // int viewer
-        if (desc.Type == 'int' && action == 'view') {
-            var $div = $('<div />');
-            var value = content[desc.Name] || 0;
-            if (desc.Title)
-                $('<h2 />').text(desc.Title + ': ' + value);
-            else
-                $('<h2 />').text(value);
-            return $div;
-        }
-
-        // textfilelist editor
-        if (desc.Type == 'textfilelist' && action == 'edit') {
-            var $div = $('<div />')
-                .append('<input type="hidden" class="listnameholder" value="' + desc.Name + '">')
-                .append('<button class="btn btn-primary addtexteditor">Add</button>');
-            if (desc.Prompt)
-                $('<h2 />').text(desc.Prompt).prependTo($div);
-            return $div;
-        }
-
-        return null;
+        return $div;
     };
 
     $('.closeparentdiv').live('click', function () {
         $(this).closest('div').remove();
-        renumber();
         return false;
     });
-    $('.addtexteditor').live('click', function() {
-        var name = $(this).closest('div').find('.listnameholder').val();
-        var $editor = $('<textarea name="' + name + '" class="stringlistfield" />');
-        var $inner = $('<div />')
-            .append('<hr />')
-            .append($editor)
-            .append('<button class="close closeparentdiv">&times;</button>');
-        $(this).closest('div').append($inner);
+    $('.addeditorfield').live('click', function () {
+        var $div = $(this).closest('div.editorlist');
+        var field = $div.data('field');
+        var role = $div.data('role');
+        var $elt = createEditorField(field, field.Default, role);
+        if ($elt.hasClass('editorelt'))
+            $elt.removeClass('editorelt').addClass('editorlistelt');
+        $elt.find('h2').first().remove();
+        $elt.append('<button class="close closeparentdiv">&times;</button>');
+        $elt.append('<hr>');
+        $elt.insertBefore(this);
+        return false;
+    });
 
-        CodeMirror.fromTextArea($editor[0], {
-            mode: 'text',
-            lineNumbers: true,
-            change: function(cm) { $editor.val(cm.getValue()); }
+    formToJsonGetElt = function (field, $div) {
+        var result;
+        $div.find('.stringfield').each(function () {
+            result = String(this.value);
         });
-
-        return false;
-    });
+        $div.find('.intfield').each(function () {
+            result = Number(this.value);
+        });
+        return result;
+    };
 
     formToJson = function ($root) {
         var o = {};
@@ -205,32 +262,25 @@ jQuery(function ($) {
         $root.find('.CodeMirror').each(function(i, elt) {
             elt.CodeMirror.save();
         });
-        $root.find('.stringfield').each(function () {
-            if (!this.name) {
-                console.log('Warning! formToJson found a stringfield without a name');
-                return;
-            }
-            o[this.name] = String(this.value);
-        });
-        $root.find('.intfield').each(function () {
-            if (!this.name) {
-                console.log('warning! formtojson found an intfield without a name');
-                return;
-            }
-            o[this.name] = Number(this.value);
-        });
-        $root.find('.listnameholder').each(function () {
-            var name = this.value;
-            if (!name) {
-                console.log('warning! formtojson found a listnameholder without a name');
-                return;
-            }
-            o[name] = [];
 
-            var $div = $(this).closest('div');
-            $div.find('.stringlistfield').each(function (i, elt) {
-                o[name].push(String(this.value));
+        // grab single elements
+        $root.find('div.editorelt').each(function () {
+            var $div = $(this);
+            var field = $div.data('field');
+            o[field.Name] = formToJsonGetElt(field, $div);
+        });
+
+        // gather lists
+        $root.find('div.editorlist').each(function () {
+            var $div = $(this);
+            var field = $div.data('field');
+            var list = [];
+            $(this).find('div.editorlistelt').each(function () {
+                var elt = formToJsonGetElt(field, $(this));
+                if (typeof elt == 'number' || elt)
+                    list.push(elt);
             });
+            o[field.Name] = list;
         });
         return JSON.stringify(o);
     };
