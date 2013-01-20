@@ -31,8 +31,10 @@ local getAssignmentListingGeneric = function(course, assignment)
 	end
 
 	result.Name = redis.call('get', 'problem:'..problem..':name')
+	result.ID = tonumber(assignment)
 	result.Open = tonumber(redis.call('get', 'assignment:'..assignment..':open'))
 	result.Close = tonumber(redis.call('get', 'assignment:'..assignment..':close'))
+	result.ForCredit = redis.call('get', 'assignment:'..assignment..':forcredit') == 'true'
 
 	return result
 end

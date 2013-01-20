@@ -4,12 +4,14 @@ import (
 	"github.com/gorilla/pat"
 	"github.com/gorilla/sessions"
 	"github.com/vmihailenco/redis"
+	"log"
 	"net/http"
 )
 
 func init() {
 	r := pat.New()
 	r.Add("GET", `/problem/listtypes`, handlerStudent(problem_listtypes))
+	r.Add("GET", `/problem/type/{tag:[\w:]+$}`, handlerStudent(problem_type))
 	http.Handle("/problem/", r)
 }
 
@@ -148,4 +150,8 @@ var Python27ExpressionDescription = &ProblemType{
 
 func problem_listtypes(w http.ResponseWriter, r *http.Request, db *redis.Client, session *sessions.Session) {
 	writeJson(w, r, []*ProblemType{Python27InputOutputDescription, Python27ExpressionDescription})
+}
+
+func problem_type(w http.ResponseWriter, r *http.Request, db *redis.Client, session *sessions.Session) {
+	log.Printf("Not implemented")
 }

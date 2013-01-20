@@ -26,7 +26,6 @@ type CSVStudent struct {
 
 type CSVUploadResult struct {
 	Success                bool
-	Message                string
 	UnknownCanvasCourseTag string
 	UnknownStudents        []string
 	PossibleDrops          []*CSVStudent

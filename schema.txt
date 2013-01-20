@@ -43,6 +43,7 @@ index:courses:tagbycanvastag - hash of Canvas tags to normal tag
 
 assignment:789:course - tag of course
 assignment:789:problem - ID number of problem
+assignment:789:forcredit - true if this should be counted toward a grade
 assignment:789:open - start time for assignment
 assignment:789:close - due date for assignment
 index:assignments:futurebyopen - sorted set of future assignments, sorted by open time
