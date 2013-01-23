@@ -1,6 +1,6 @@
 tag:foo:description - friendly description of the tag
 tag:foo:problems - set of problem IDs (123)
-tag:foo:priority - int from 0 to 100, 90: course, 70: language, 50: subject, 30: week/unit, 10: creator
+tag:foo:priority - int from 0 to 100, 90: course, 70: language, 50: subject, 30: week/unit, 10: creator, 0: unknown
 index:tags:all - set of all tags
 index:tags:bypriority - sorted set of all tags by priority
 

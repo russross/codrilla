@@ -3,7 +3,7 @@ Students
 
 *   Get a list of courses and open problems
 
-        GET /student/list/courses
+        GET /student/courses
 
     Returns a list of active courses the student is enrolled in.
     Each contains:
@@ -34,7 +34,7 @@ Students
 
 *   Get a grade report for a course
 
-        GET /student/list/grades/COURSETAG
+        GET /student/grades/COURSETAG
 
     Returns a list of assignments for the specified course and the
     student's result in each one. Each assignment in the list
@@ -71,13 +71,13 @@ Students
     attempt.
 
 
-Instructors
------------
+Courses
+-------
 
 *   Upload a Canvas CSV course grade list to update course
     membership:
 
-        POST /instructor/update/courselist
+        POST /course/canvascsvlist
 
     The CSV file must be included as the form field `CSVFile`.
     Returns the following:
@@ -98,7 +98,7 @@ Instructors
 
 *   Update some course and student mapping data:
 
-        POST /instructor/update/canvasmappings
+        POST /course/canvasmappings
 
     The contents must be JSON data containing the following:
 
@@ -110,13 +110,60 @@ Instructors
     Once these mappings are updated, the CSV file can be uploaded
     again to finish updating course membership.
 
+*   Get a list of courses and assignments (instructor)
+
+        GET /course/list
+
+    Returns a list of active courses for this instructor. Each
+    contains:
+
+    *   Name: the name of the course
+    *   Close: timestamp when the course ends
+    *   Instructors: list of instructor emails for this course
+    *   Students: list of student emails for this course
+    *   OpenAssignments: list of open assignments for this course,
+        sorted by deadline
+    *   ClosedAssignments: list of closed assignments for this course,
+        sorted by deadline
+    *   FutureAssignments: list of future assignments for this
+        course, sorted by open time
+
+    Assignment lists contain generic assignment listings
+
+*   Create an assignment
+
+        POST /course/newassignment/COURSETAG
+
+    Create a new assignment for the course indicated. Contents are
+    JSON data containing:
+
+    *   Problem: ID number of the problem
+    *   Open: timestamp when the problem should open (optional--if
+        missing, current time is used)
+    *   Close: timestamp when the problem should close (must be in
+        future)
+    *   ForCredit: true if this assignment counts toward a grade
+
+*   Get grades for all students in a course
+
+        GET /course/grades/COURSETAG
+
+    Returns a list of students with grades. Each contains:
+
+    *   Name: student name
+    *   Email: student email
+    *   Assignments: a list of assignments. The list is the same as
+        for the student grade report. Each element contains the
+        generic and student-specific report for assignments that are
+        open or closed (but not future).
+
 
 Problems
 --------
 
-*   Get a list of problem types
+*   Get a list of problem types (instructor)
 
-        GET /problem/listtypes
+        GET /problem/types
 
     Returns a list of problem type descriptions. Each has the
     following:
@@ -141,7 +188,7 @@ Problems
     *   Student: action to take when presenting this field to a
         student. Same options as for Editor
 
-*   Get a problem type description
+*   Get a problem type description (instructor)
 
         GET /problem/type/TAG
 
@@ -150,7 +197,7 @@ Problems
 
 *   Create a new problem (instructor)
 
-        POST /problem/create
+        POST /problem/new
 
     Create a new problem (not an assignment), with the following
     data:
@@ -161,4 +208,37 @@ Problems
     *   Problem: contents of the problem
 
     Returns the newly-created problem object.
+
+*   Save changes to a problem
+
+        POST /problem/update/ID
+
+    Same as for /problem/create, but updates an existing problem
+
+*   Load a problem for preview/editing (instructor)
+
+        GET /problem/get/ID
+
+    Loads a problem object.
+
+*   Get a list of problem tags (instructor)
+
+        GET /problem/tags
+
+    Returns a list of problem tags, listed from high priority to
+    low. Each contains:
+
+    *   Tag: the tag
+    *   Description: the friendly description of the tag
+    *   Priority: int from 0 to 100, higher being more important
+    *   Problems: list of problems with this tag
+
+    Problems in the list each contain
+
+    *   ID: the problem ID
+    *   Name: problem name
+    *   Type: evaluation type (a problem type tag)
+    *   Tags: a list of all tags for this problem
+    *   UsedBy: a list of courses that have used/are using this
+        (list of course tags)
 
