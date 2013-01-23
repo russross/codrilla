@@ -167,6 +167,28 @@ var Python27ExpressionDescription = &ProblemType{
 	},
 }
 
+func setupProblemTypes(db *redis.Client) {
+	ioJson, err := json.Marshal(Python27InputOutputDescription)
+	if err != nil {
+		log.Fatalf("Error json-encoding Python27InputOutputDescription: %v", err)
+	}
+	expJson, err := json.Marshal(Python27ExpressionDescription)
+	if err != nil {
+		log.Fatalf("Error json-encoding Python27ExpressionDescription: %v", err)
+	}
+
+	if i := db.Del("grader:problemtypes"); i.Err() != nil {
+		log.Fatalf("DB error deleting problem type hash: %v", i.Err())
+	}
+
+	if b := db.HSet("grader:problemtypes", Python27InputOutputDescription.Tag, string(ioJson)); b.Err() != nil {
+		log.Fatalf("DB error adding Python27InputOutputDescription type: %v", b.Err())
+	}
+	if b := db.HSet("grader:problemtypes", Python27ExpressionDescription.Tag, string(expJson)); b.Err() != nil {
+		log.Fatalf("DB error adding Python27ExpressionDescription type: %v", b.Err())
+	}
+}
+
 func problem_types(w http.ResponseWriter, r *http.Request, db *redis.Client, session *sessions.Session) {
 	// get the list of types from the database
 	slice := db.HGetAll("grader:problemtypes")
@@ -200,7 +222,7 @@ func problem_type(w http.ResponseWriter, r *http.Request, db *redis.Client, sess
 		http.Error(w, "Not found", http.StatusNotFound)
 		return
 	}
-	
+
 	// parse JSON data
 	problemType := new(ProblemType)
 	if err := json.Unmarshal([]byte(s), problemType); err != nil {
@@ -213,13 +235,12 @@ func problem_type(w http.ResponseWriter, r *http.Request, db *redis.Client, sess
 }
 
 type Problem struct {
-	ID int64
+	ID   int64
 	Name string
 	Type string
 	Tags []string
 	Data map[string]interface{}
 }
-
 
 func problem_new(w http.ResponseWriter, r *http.Request, db *redis.Client, session *sessions.Session, decoder *json.Decoder) {
 	problem_save_common(w, r, db, session, decoder, 0)
@@ -294,7 +315,7 @@ func problem_save_common(w http.ResponseWriter, r *http.Request, db *redis.Clien
 		http.Error(w, "Unknown problem type", http.StatusBadRequest)
 		return
 	}
-	
+
 	// parse JSON data describing problem type
 	problemType := new(ProblemType)
 	if err := json.Unmarshal([]byte(s), problemType); err != nil {

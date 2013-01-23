@@ -69,6 +69,7 @@ func main() {
 	db := redis.NewTCPClient(config.RedisHost, config.RedisPassword, config.RedisDB)
 	defer db.Close()
 	loadScripts(db, scriptPath)
+	setupProblemTypes(db)
 
 	log.Fatal(http.ListenAndServe(":8080", nil))
 }
