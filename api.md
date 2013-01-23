@@ -60,7 +60,7 @@ Students
 
 *   Submit an assignment attempt
 
-        POST /student/attempt/ID#
+        POST /student/submit/ID#
 
     Saves an attempted solution for assignement ID#. This only fails
     if there is an invalid submission. Whether or not the

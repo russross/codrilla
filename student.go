@@ -13,13 +13,15 @@ import (
 
 func init() {
 	r := pat.New()
-	r.Add("GET", `/student/list/courses`, handlerStudent(student_list_courses))
-	r.Add("GET", `/student/list/grades/{coursetag:[\w:_\-]+$}`, handlerStudent(student_list_grades))
+	r.Add("GET", `/student/courses`, handlerStudent(student_courses))
+	r.Add("GET", `/student/grades/{coursetag:[\w:_\-]+$}`, handlerStudent(student_grades))
+	r.Add("GET", `/student/assignment/{id:\d+$}`, handlerStudent(student_assignment))
+	r.Add("POST", `/student/submit/{id:\d+$}`, handlerStudent(student_submit))
 	http.Handle("/student/", r)
 }
 
 // get a list of current courses and assignments for this student
-func student_list_courses(w http.ResponseWriter, r *http.Request, db *redis.Client, session *sessions.Session) {
+func student_courses(w http.ResponseWriter, r *http.Request, db *redis.Client, session *sessions.Session) {
 	now := fmt.Sprintf("%d", time.Now().In(timeZone).Unix())
 	email := session.Values["email"].(string)
 
@@ -44,7 +46,7 @@ func student_list_courses(w http.ResponseWriter, r *http.Request, db *redis.Clie
 }
 
 // get a list of assignment grades for this student
-func student_list_grades(w http.ResponseWriter, r *http.Request, db *redis.Client, session *sessions.Session) {
+func student_grades(w http.ResponseWriter, r *http.Request, db *redis.Client, session *sessions.Session) {
 	email := session.Values["email"].(string)
 	courseTag := r.URL.Query().Get(":coursetag")
 
@@ -66,4 +68,10 @@ func student_list_grades(w http.ResponseWriter, r *http.Request, db *redis.Clien
 	}
 
 	writeJson(w, r, response)
+}
+
+func student_assignment(w http.ResponseWriter, r *http.Request, db *redis.Client, session *sessions.Session) {
+}
+
+func student_submit(w http.ResponseWriter, r *http.Request, db *redis.Client, session *sessions.Session) {
 }

@@ -13,10 +13,12 @@ import (
 
 func init() {
 	r := pat.New()
-	r.Add("POST", `/instructor/update/courselist`, handlerInstructor(instructor_update_courselist))
-	r.Add("POST", `/instructor/update/canvasmappings`, handlerInstructorJson(instructor_update_canvasmappings))
-	r.Add("POST", `/instructor/create/problem`, handlerInstructorJson(instructor_create_problem))
-	http.Handle("/instructor/", r)
+	r.Add("POST", `/course/canvascsvlist`, handlerInstructor(course_canvascsvlist))
+	r.Add("POST", `/course/canvasmappings`, handlerInstructorJson(course_canvasmappings))
+	r.Add("GET", `/course/list`, handlerInstructor(course_list))
+	r.Add("POST", `/course/newassignment/{coursetag:[\w:_\-]+$}`, handlerInstructor(course_newassignment))
+	r.Add("GET", `/course/grades/{coursetag:[\w:_\-]+$}`, handlerInstructor(course_grades))
+	http.Handle("/course/", r)
 }
 
 type CSVStudent struct {
@@ -32,7 +34,7 @@ type CSVUploadResult struct {
 	Log                    []string
 }
 
-func instructor_update_courselist(w http.ResponseWriter, r *http.Request, db *redis.Client, session *sessions.Session) {
+func course_canvascsvlist(w http.ResponseWriter, r *http.Request, db *redis.Client, session *sessions.Session) {
 	instructor := session.Values["email"].(string)
 	role := session.Values["email"].(string)
 
@@ -221,7 +223,7 @@ type CanvasImportHelpers struct {
 	StudentIDToEmail  map[string]string
 }
 
-func instructor_update_canvasmappings(w http.ResponseWriter, r *http.Request, db *redis.Client, session *sessions.Session, decoder *json.Decoder) {
+func course_canvasmappings(w http.ResponseWriter, r *http.Request, db *redis.Client, session *sessions.Session, decoder *json.Decoder) {
 	helpers := new(CanvasImportHelpers)
 	if err := decoder.Decode(helpers); err != nil {
 		log.Printf("Failure decoding JSON request: %v", err)
@@ -298,12 +300,11 @@ func instructor_update_canvasmappings(w http.ResponseWriter, r *http.Request, db
 	}
 }
 
-type Problem struct {
-	Name string
-	Type string
-	Tags []string
-	Data map[string]interface{}
+func course_list(w http.ResponseWriter, r *http.Request, db *redis.Client, session *sessions.Session) {
 }
 
-func instructor_create_problem(w http.ResponseWriter, r *http.Request, db *redis.Client, session *sessions.Session, decoder *json.Decoder) {
+func course_newassignment(w http.ResponseWriter, r *http.Request, db *redis.Client, session *sessions.Session) {
+}
+
+func course_grades(w http.ResponseWriter, r *http.Request, db *redis.Client, session *sessions.Session) {
 }
