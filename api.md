@@ -57,6 +57,7 @@ Students
     *   FieldList: list of fields for the problem type
     *   Problem: contents of the problem
     *   Attempt: the student's most recent attempt (if applicable)
+    *   Passed: true if the student has passed this problem
 
 *   Submit an assignment attempt
 
@@ -67,7 +68,7 @@ Students
     submission passed is not immediately available. The result can
     be found by polling the course list or the student's grade list.
 
-    The submissions includes a JSON payload with the student's
+    The request includes a JSON payload with the student's
     attempt.
 
 

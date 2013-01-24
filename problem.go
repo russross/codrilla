@@ -34,7 +34,7 @@ func validProblemTag(s string) bool {
 	return true
 }
 
-type ProblemDescriptionField struct {
+type ProblemField struct {
 	Name    string
 	Prompt  string
 	Title   string
@@ -46,15 +46,15 @@ type ProblemDescriptionField struct {
 }
 
 type ProblemType struct {
-	Name        string
-	Tag         string
-	Description []ProblemDescriptionField
+	Name      string
+	Tag       string
+	FieldList []ProblemField
 }
 
 var Python27InputOutputDescription = &ProblemType{
 	Name: "Python 2.7 Input/Output",
 	Tag:  "python27inputoutput",
-	Description: []ProblemDescriptionField{
+	FieldList: []ProblemField{
 		{
 			Name:    "Description",
 			Prompt:  "Enter the problem description here",
@@ -112,7 +112,7 @@ var Python27InputOutputDescription = &ProblemType{
 var Python27ExpressionDescription = &ProblemType{
 	Name: "Python 2.7 Expression",
 	Tag:  "python27expression",
-	Description: []ProblemDescriptionField{
+	FieldList: []ProblemField{
 		{
 			Name:    "Description",
 			Prompt:  "Enter the problem description here",
@@ -325,7 +325,7 @@ func problem_save_common(w http.ResponseWriter, r *http.Request, db *redis.Clien
 	}
 
 	// validate the problem and prepare for storage
-	if err := validateProblem(problem, problemType); err != nil {
+	if err := filterEditorFields(problemType, problem.Data); err != nil {
 		log.Printf("Error validating problem: %v", err)
 		http.Error(w, "Error validating problem", http.StatusBadRequest)
 		return
@@ -361,10 +361,31 @@ func problem_save_common(w http.ResponseWriter, r *http.Request, db *redis.Clien
 }
 
 func problem_tags(w http.ResponseWriter, r *http.Request, db *redis.Client, session *sessions.Session) {
-	log.Printf("Not implemented")
+	iface := db.EvalSha(luaScripts["problemtags"], nil, []string{})
+	if iface.Err() != nil {
+		log.Printf("DB error getting tags listing: %v", iface.Err())
+		http.Error(w, "DB error", http.StatusInternalServerError)
+		return
+	}
+
+	var response interface{}
+	if err := json.Unmarshal([]byte(iface.Val().(string)), &response); err != nil {
+		log.Printf("Unable to parse JSON response from DB: %v", err)
+		http.Error(w, "DB error", http.StatusInternalServerError)
+		return
+	}
+
+	writeJson(w, r, response)
 }
 
-func validateProblem(p *Problem, kind *ProblemType) error {
-	// TODO
-	return nil
+func filterEditorFields(problemType *ProblemType, p map[string]interface{}) (filtered map[string]interface{}) {
+	filtered = make(map[string]interface{})
+
+	for _, field := range problemType.FieldList {
+		if value, present := p[field.Name]; present && field.Editor == "edit" {
+			filtered[field.Name] = value
+		}
+	}
+
+	return
 }

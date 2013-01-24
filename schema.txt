@@ -60,3 +60,27 @@ grader:problemtypes - hash of grading tags to field lists encoded in JSON
 
 queue:solution:waiting - solution IDs that need to be evaluated
 queue:solution:processing - solution IDs currently being evaluated
+
+
+To create an administrator
+--------------------------
+
+sadd index:administrators <email>
+
+To create an instructor
+-----------------------
+
+set instructor:<email>:name '<Display Name>'
+sadd index:instructors:all <email>
+
+To create a course
+------------------
+
+set course:<tag>:name '<Display name>'
+set course:<tag>:close <Unix time stamp>  (note: 5/15/2013 is 1368576000)
+sadd course:<tag>:instructors <email>
+...
+sadd index:courses:active <tag>
+sadd index:courses:all <tag>
+zadd index:courses:activebyclose <Unix time stamp> <tag>
+hset index:courses:tagbycanvastag <canvas tag> <tag>
