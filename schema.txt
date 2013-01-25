@@ -46,6 +46,7 @@ assignment:789:problem - ID number of problem
 assignment:789:forcredit - true if this should be counted toward a grade
 assignment:789:open - start time for assignment
 assignment:789:close - due date for assignment
+assignment:counter - id generator counter
 index:assignments:futurebyopen - sorted set of future assignments, sorted by open time
 index:assignments:activebyclose - sorted set of active assignments, sorted by due date
 index:assignments:past - set of closed assignments
@@ -55,11 +56,12 @@ solution:345:assignment - assignment ID
 solution:345:submissions - list of JSON-encoded unevaluated submissions
 solution:345:graded - list of JSON-encoded submissions after grading
 solution:345:passed - true if most recent attempt was successful
+solution:counter - id generator counter
 
 grader:problemtypes - hash of grading tags to field lists encoded in JSON
 
-queue:solution:waiting - solution IDs that need to be evaluated
-queue:solution:processing - solution IDs currently being evaluated
+queue:solution:waiting - set of solution IDs that need to be evaluated
+queue:solution:processing - set of solution IDs currently being evaluated
 
 
 To create an administrator

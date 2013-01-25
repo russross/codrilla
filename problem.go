@@ -325,11 +325,19 @@ func problem_save_common(w http.ResponseWriter, r *http.Request, db *redis.Clien
 	}
 
 	// validate the problem and prepare for storage
-	if err := filterEditorFields(problemType, problem.Data); err != nil {
-		log.Printf("Error validating problem: %v", err)
-		http.Error(w, "Error validating problem", http.StatusBadRequest)
-		return
+	filtered := make(map[string]interface{})
+
+	for _, field := range problemType.FieldList {
+		if value, present := problem.Data[field.Name]; present && field.Editor == "edit" {
+			filtered[field.Name] = value
+		} else if field.Editor == "edit" {
+			log.Printf("Missing %s field in problem", field.Name)
+			http.Error(w, "Problem data missing required field", http.StatusBadRequest)
+			return
+		}
 	}
+	problem.Data = filtered
+
 	problemJson, err := json.Marshal(problem)
 	if err != nil {
 		log.Printf("JSON encoding error: %v", err)
@@ -376,16 +384,4 @@ func problem_tags(w http.ResponseWriter, r *http.Request, db *redis.Client, sess
 	}
 
 	writeJson(w, r, response)
-}
-
-func filterEditorFields(problemType *ProblemType, p map[string]interface{}) (filtered map[string]interface{}) {
-	filtered = make(map[string]interface{})
-
-	for _, field := range problemType.FieldList {
-		if value, present := p[field.Name]; present && field.Editor == "edit" {
-			filtered[field.Name] = value
-		}
-	}
-
-	return
 }

@@ -5,8 +5,14 @@ Students
 
         GET /student/courses
 
-    Returns a list of active courses the student is enrolled in.
-    Each contains:
+    Returns some basic info about the student as well as a list of
+    active courses the student is enrolled in. Fields include:
+    
+    *   Name: the name of the student
+    *   Email: the student's email address
+    *   Courses: a list of course
+    
+    Each course contains:
 
     *   Name: the name of the course
     *   Close: timestamp when the course ends

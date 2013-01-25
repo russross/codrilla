@@ -1,11 +1,11 @@
 -- called with: email coursetag
 
 if not ARGV[1] or ARGV[1] == '' then
-	error('studentlistgrades: missing email address')
+	error('coursegrades: missing email address')
 end
 local email = ARGV[1]
 if not ARGV[2] or ARGV[2] == '' then
-	error('studentlistgrades: missing course tag')
+	error('coursegrades: missing course tag')
 end
 local courseTag = ARGV[2]
 
@@ -37,48 +37,52 @@ local getAssignmentListingStudent = function(course, assignment, email, result)
 	result.Passed = redis.call('hget', 'student:'..email..':solutions:'..course, assignment) == 'true'
 end
 
-local main = function (email, courseTag)
-	-- make sure this is an active student
-	if redis.call('sismember', 'index:students:active', email) == 0 then
-		error('studentlistgrades: not an active student')
-	end
+-- make sure this is a valid course
+if redis.call('sismember', 'index:courses:all', courseTag) == 0 then
+	error('not a valid course')
+end
 
-	-- make sure course is active
-	if redis.call('sismember', 'index:courses:active', courseTag) == 0 then
-		error('studentlistgrades: not an active course')
+-- make sure this is an instructor for this course
+if redis.call('sismember', 'index:administrators', email) == 0 then
+	if redis.call('sismember', 'course:'..courseTag..':instructors', email) == 0 then
+		error('user '..email..' is not an instructor for '..courseTag)
 	end
+end
 
-	-- make sure student is enrolled in course
-	if redis.call('sismember', 'student:'..email..':courses', courseTag) == 0 then
-		error('studentlistgrades: student not enrolled in course')
-	end
+-- get the list of closed assignments and open assignments
+local closed = redis.call('smembers', 'course:'..courseTag..':assignments:past')
+local open = redis.call('smembers', 'course:'..courseTag..':assignments:active')
+-- merge the two lists
+local assignments = {}
+for _, v in ipairs(closed) do
+	table.insert(assignments, v)
+end
+for _, v in ipairs(open) do
+	table.insert(assignments, v)
+end
 
-	-- get the list of closed assignments and open assignments
-	local closed = redis.call('smembers', 'course:'..courseTag..':assignments:past')
-	local open = redis.call('smembers', 'course:'..courseTag..':assignments:active')
-	-- merge the two lists
-	local assignments = {}
-	for _, v in ipairs(closed) do
-		table.insert(assignments, v)
-	end
-	for _, v in ipairs(open) do
-		table.insert(assignments, v)
-	end
+local result = {}
 
-	local response = {}
+-- assignment sorting function
+local compare = function (a, b)
+	return a.Close < a.Close
+end
+
+-- get a list of students
+local students = redis.call('course:'..courseTag..':students')
+table.sort(students)
+for _, student in ipairs(students) do
+	local elt = {}
 	for _, asstID in ipairs(assignments) do
 		local assignment = getAssignmentListingGeneric(asstID)
-		getAssignmentListingStudent(courseTag, asstID, email, assignment)
-		table.insert(response, assignment)
+		getAssignmentListingStudent(courseTag, asstID, student, assignment)
+		table.insert(elt, assignment)
 	end
 
 	-- sort the assignments by deadline
-	local compare = function (a, b)
-		return a.Close < a.Close
-	end
-	table.sort(response, compare)
+	table.sort(elt, compare)
 
-	return response
+	table.insert(result, elt)
 end
 
-return cjson.encode(main(email, courseTag))
+return cjson.encode(result)

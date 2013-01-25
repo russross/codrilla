@@ -9,11 +9,11 @@ if not ARGV[2] or ARGV[2] == '' then
 end
 local asstID = ARGV[2]
 
-local getAssignmentListingGeneric = function(course, assignment)
+local getAssignmentListingGeneric = function(assignment)
 	local result = {}
 	local problem = redis.call('get', 'assignment:'..assignment..':problem')
 	if problem == '' then
-		error('studentlistcourses: assignment '..assignment..' mapped to blank problem ID')
+		error('getAssignmentListingGeneric: assignment '..assignment..' mapped to blank problem ID')
 	end
 
 	result.Name = redis.call('get', 'problem:'..problem..':name')
@@ -59,7 +59,7 @@ end
 local problem = redis.call('get', 'assignment:'..asstID..':problem')
 
 local result = {}
-result.Assignment = getAssignmentListingGeneric(course, asstID)
+result.Assignment = getAssignmentListingGeneric(asstID)
 getAssignmentListingStudent(course, asstID, email, result.Assignment)
 result.CourseName = redis.call('get', 'course:'..course..':name')
 result.CourseTag = course

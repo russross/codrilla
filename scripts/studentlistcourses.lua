@@ -1,13 +1,9 @@
--- called with: email timestamp
+-- called with: email
 
 if not ARGV[1] or ARGV[1] == '' then
 	error('studentlistcourses: missing email address')
 end
 local email = ARGV[1]
-if not ARGV[2] or ARGV[2] == '' then
-	error('studentlistcourses: missing timestamp')
-end
-local timestamp = ARGV[2]
 
 local getCourseListing = function(course)
 	local result = {}
@@ -23,11 +19,11 @@ local getCourseListing = function(course)
 	return result
 end
 
-local getAssignmentListingGeneric = function(course, assignment)
+local getAssignmentListingGeneric = function(assignment)
 	local result = {}
 	local problem = redis.call('get', 'assignment:'..assignment..':problem')
 	if problem == '' then
-		error('studentlistcourses: assignment '..assignment..' mapped to blank problem ID')
+		error('getAssignmentListingGeneric: assignment '..assignment..' mapped to blank problem ID')
 	end
 
 	result.Name = redis.call('get', 'problem:'..problem..':name')
@@ -51,7 +47,7 @@ local getAssignmentListingStudent = function(course, assignment, email, result)
 	result.Passed = redis.call('hget', 'student:'..email..':solutions:'..course, assignment) == 'true'
 end
 
-local main = function (email, timestamp)
+local main = function (email)
 	-- make sure this is an active student
 	if redis.call('sismember', 'index:students:active', email) == 0 then
 		error('studentlistcourses: not an active student')
@@ -59,7 +55,6 @@ local main = function (email, timestamp)
 
 	local response = {}
 	response.Email = email
-	response.TimeStamp = tonumber(timestamp)
 	response.Courses = {}
 	response.Name = redis.call('get', 'student:'..email..':name')
 
@@ -72,7 +67,7 @@ local main = function (email, timestamp)
 		-- get the list of active assignments
 		local assignments = redis.call('smembers', 'course:'..courseTag..':assignments:active')
 		for _, asstID in ipairs(assignments) do
-			local assignment = getAssignmentListingGeneric(courseTag, asstID)
+			local assignment = getAssignmentListingGeneric(asstID)
 			getAssignmentListingStudent(courseTag, asstID, email, assignment)
 			table.insert(course.OpenAssignments, assignment)
 		end
@@ -94,7 +89,7 @@ local main = function (email, timestamp)
 		if #future == 0 then
 			course.NextAssignment = nil
 		else
-			course.NextAssignment = getAssignmentListingGeneric(courseTag, future[0])
+			course.NextAssignment = getAssignmentListingGeneric(future[0])
 		end
 
 		-- add this course to the list
@@ -104,4 +99,4 @@ local main = function (email, timestamp)
 	return response
 end
 
-return cjson.encode(main(email, timestamp))
+return cjson.encode(main(email))

@@ -70,8 +70,20 @@ func main() {
 	defer db.Close()
 	loadScripts(db, scriptPath)
 	setupProblemTypes(db)
+	restoreQueue(db)
 
 	log.Fatal(http.ListenAndServe(":8080", nil))
+}
+
+func restoreQueue(db *redis.Client) {
+	err := db.SUnionStore("queue:solution:waiting", "queue:solution:waiting", "queue:solution:processing").Err()
+	if err != nil {
+		log.Fatalf("DB error moving processing queue to waiting queue: %v", err)
+	}
+
+	if err = db.Del("queue:solution:processing").Err(); err != nil {
+		log.Fatalf("DB error deleting processing queue: %v", err)
+	}
 }
 
 func cron(db *redis.Client) error {
@@ -224,6 +236,37 @@ func (h handlerStudent) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	// call the handler
 	h(w, r, db, session)
+}
+
+type handlerStudentJson func(http.ResponseWriter, *http.Request, *redis.Client, *sessions.Session, *json.Decoder)
+
+func (h handlerStudentJson) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	// get the session (or create a new one)
+	session, _ := store.Get(r, "codrilla-session")
+
+	// get a db connection
+	db := redis.NewTCPClient(config.RedisHost, config.RedisPassword, config.RedisDB)
+	defer db.Close()
+	if err := cron(db); err != nil {
+		http.Error(w, "DB error running cron updates", http.StatusInternalServerError)
+		return
+	}
+
+	// verify that the user is logged in
+	if err := checkSession(db, session); err != nil {
+		http.Error(w, err.Error(), http.StatusForbidden)
+		return
+	}
+
+	if !checkJsonRequest(w, r) {
+		return
+	}
+
+	decoder := json.NewDecoder(r.Body)
+	defer r.Body.Close()
+
+	// call the handler
+	h(w, r, db, session, decoder)
 }
 
 func writeJson(w http.ResponseWriter, r *http.Request, elt interface{}) {

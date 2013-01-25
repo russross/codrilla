@@ -9,6 +9,8 @@ import (
 	"github.com/vmihailenco/redis"
 	"log"
 	"net/http"
+	"strconv"
+	"time"
 )
 
 func init() {
@@ -16,7 +18,7 @@ func init() {
 	r.Add("POST", `/course/canvascsvlist`, handlerInstructor(course_canvascsvlist))
 	r.Add("POST", `/course/canvasmappings`, handlerInstructorJson(course_canvasmappings))
 	r.Add("GET", `/course/list`, handlerInstructor(course_list))
-	r.Add("POST", `/course/newassignment/{coursetag:[\w:_\-]+$}`, handlerInstructor(course_newassignment))
+	r.Add("POST", `/course/newassignment/{coursetag:[\w:_\-]+$}`, handlerInstructorJson(course_newassignment))
 	r.Add("GET", `/course/grades/{coursetag:[\w:_\-]+$}`, handlerInstructor(course_grades))
 	http.Handle("/course/", r)
 }
@@ -301,10 +303,99 @@ func course_canvasmappings(w http.ResponseWriter, r *http.Request, db *redis.Cli
 }
 
 func course_list(w http.ResponseWriter, r *http.Request, db *redis.Client, session *sessions.Session) {
+	email := session.Values["email"].(string)
+
+	iface := db.EvalSha(luaScripts["courselist"], nil, []string{email})
+	if iface.Err() != nil {
+		log.Printf("DB error getting course listing for %s: %v", email, iface.Err())
+		http.Error(w, "DB error", http.StatusInternalServerError)
+		return
+	}
+
+	var response interface{}
+	if err := json.Unmarshal([]byte(iface.Val().(string)), &response); err != nil {
+		log.Printf("Unable to parse JSON response from DB: %v", err)
+		http.Error(w, "DB error", http.StatusInternalServerError)
+		return
+	}
+
+	writeJson(w, r, response)
 }
 
-func course_newassignment(w http.ResponseWriter, r *http.Request, db *redis.Client, session *sessions.Session) {
+type NewAssignment struct {
+	Problem   int64
+	Open      int64
+	Close     int64
+	ForCredit bool
+}
+
+func course_newassignment(w http.ResponseWriter, r *http.Request, db *redis.Client, session *sessions.Session, decoder *json.Decoder) {
+	email := session.Values["email"].(string)
+	courseTag := r.URL.Query().Get(":coursetag")
+
+	asst := new(NewAssignment)
+	if err := decoder.Decode(asst); err != nil {
+		log.Printf("Failure decoding JSON request: %v", err)
+		http.Error(w, "Failure decoding JSON request", http.StatusBadRequest)
+		return
+	}
+
+	// sanity check the problem number
+	if asst.Problem < 1 {
+		log.Printf("Problem number must be > 0")
+		http.Error(w, "Invalid problem number", http.StatusBadRequest)
+		return
+	}
+	problem := strconv.FormatInt(asst.Problem, 10)
+
+	// if the open time is missing, use now
+	now := time.Now().Unix()
+	if asst.Open <= 0 {
+		asst.Open = now
+	}
+
+	// it must not open in the past
+	if asst.Open < now {
+		log.Printf("Open time must be in the future")
+		http.Error(w, "Open time must be in the future", http.StatusBadRequest)
+		return
+	}
+	open := strconv.FormatInt(asst.Open, 10)
+
+	// it must not close in the past, or before it opens
+	if asst.Close < now || asst.Close <= asst.Open {
+		log.Printf("Must close in the future after opening")
+		http.Error(w, "Close time must be in the future and after open time", http.StatusBadRequest)
+		return
+	}
+	closeTime := strconv.FormatInt(asst.Close, 10)
+	forCredit := strconv.FormatBool(asst.ForCredit)
+
+	iface := db.EvalSha(luaScripts["newassignment"], nil, []string{email, courseTag, problem, open, closeTime, forCredit})
+	if iface.Err() != nil {
+		log.Printf("DB error creating new assignment for %s: %v", email, iface.Err())
+		http.Error(w, "DB error", http.StatusInternalServerError)
+		return
+	}
 }
 
 func course_grades(w http.ResponseWriter, r *http.Request, db *redis.Client, session *sessions.Session) {
+	email := session.Values["email"].(string)
+	courseTag := r.URL.Query().Get(":coursetag")
+
+	iface := db.EvalSha(luaScripts["coursegrades"], nil, []string{email, courseTag})
+	if iface.Err() != nil {
+		log.Printf("DB error getting course %s grades for %s: %v", courseTag, email, iface.Err())
+		http.Error(w, "DB error", http.StatusInternalServerError)
+		return
+	}
+
+	var response interface{}
+	if err := json.Unmarshal([]byte(iface.Val().(string)), &response); err != nil {
+		log.Printf("Unable to parse JSON response from DB: %v", err)
+		http.Error(w, "DB error", http.StatusInternalServerError)
+		return
+	}
+
+	writeJson(w, r, response)
 }
