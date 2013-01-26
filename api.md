@@ -86,33 +86,28 @@ Courses
 
         POST /course/canvascsvlist
 
-    The CSV file must be included as the form field `CSVFile`.
+    Up to 3 CSV files may be uploaded as form fields `CSVFile1`,
+    `CSVFile2`, and `CSVFile3`, respectively.
     Returns the following:
 
     *   Success: true if the update was successful. False may
         indicate a partial update.
-    *   UnknownCanvasCourseTag: if set, the CSV file contained a
-        canvas course name that is not currently mapped to a course tag.
     *   UnknownStudents: a list of students (as displayable strings)
         found in the CSV file for which email addresses are unknown.
         The mappings must be updated before the students can be
         enrolled in the course.
-    *   PossibleDrops: a list of student pairs (each containing Name
-        and Email fields) for students that are currently enrolled
-        in the course but were not found in the CSV file.
     *   Log: a list of information messages created as the file was
         processed.
 
+    All students enrolled in the course that do not appear in one of
+    the CSV files will be dropped from the course.
+
 *   Update some course and student mapping data:
 
-        POST /course/canvasmappings
+        POST /course/canvasstudentmappings
 
-    The contents must be JSON data containing the following:
-
-    *   CourseCanvasToTag: an object with mappings from canvas
-        course IDs to course tags.
-    *   StudentIDToEmail: an object with mappings from canvas
-        student IDs to student email addresses.
+    The contents must be JSON object mapping Canvas student IDs to
+    email addresses.
 
     Once these mappings are updated, the CSV file can be uploaded
     again to finish updating course membership.
@@ -212,7 +207,7 @@ Problems
     *   Name: a human-readable name for this problem
     *   Type: the evaluation type of the problem
     *   Tags: a list of tags to help with finding this problem later
-    *   Problem: contents of the problem
+    *   Data: contents of the problem
 
     Returns the newly-created problem object.
 

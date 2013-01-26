@@ -69,18 +69,21 @@ local compare = function (a, b)
 end
 
 -- get a list of students
-local students = redis.call('course:'..courseTag..':students')
+local students = redis.call('smembers', 'course:'..courseTag..':students')
 table.sort(students)
 for _, student in ipairs(students) do
 	local elt = {}
+	elt.Name = redis.call('get', 'student:'..student..':name')
+	elt.Email = student
+	elt.Assignments = {}
 	for _, asstID in ipairs(assignments) do
 		local assignment = getAssignmentListingGeneric(asstID)
 		getAssignmentListingStudent(courseTag, asstID, student, assignment)
-		table.insert(elt, assignment)
+		table.insert(elt.Assignments, assignment)
 	end
 
 	-- sort the assignments by deadline
-	table.sort(elt, compare)
+	table.sort(elt.Assignments, compare)
 
 	table.insert(result, elt)
 end

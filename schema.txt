@@ -81,6 +81,7 @@ To create a course
 set course:<tag>:name '<Display name>'
 set course:<tag>:close <Unix time stamp>  (note: 5/15/2013 is 1368576000)
 sadd course:<tag>:instructors <email>
+sadd instructor:<email>:courses <tag>
 ...
 sadd index:courses:active <tag>
 sadd index:courses:all <tag>

@@ -35,8 +35,8 @@ for _, courseTag in ipairs(courseList) do
 	local elt = {}
 	elt.Name = redis.call('get', 'course:'..courseTag..':name')
 	elt.Close = redis.call('get', 'course:'..courseTag..':close')
-	elt.Instructors = redis.call('get', 'course:'..courseTag..':instructors')
-	elt.Students = redis.call('get', 'course:'..courseTag..':students')
+	elt.Instructors = redis.call('smembers', 'course:'..courseTag..':instructors')
+	elt.Students = redis.call('smembers', 'course:'..courseTag..':students')
 
 	elt.OpenAssignments = {}
 	for _, asstID in ipairs(redis.call('smembers', 'course:'..courseTag..':assignments:active')) do

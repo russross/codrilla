@@ -18,6 +18,7 @@ func init() {
 	r.Add("GET", `/problem/type/{tag:[\w:]+$}`, handlerInstructor(problem_type))
 	r.Add("POST", `/problem/new`, handlerInstructorJson(problem_new))
 	r.Add("POST", `/problem/update/{id:\d+$}`, handlerInstructorJson(problem_update))
+	r.Add("GET", `/problem/get/{id:\d+$}`, handlerInstructor(problem_get))
 	r.Add("GET", `/problem/tags`, handlerInstructor(problem_tags))
 	http.Handle("/problem/", r)
 }
@@ -199,9 +200,19 @@ func problem_types(w http.ResponseWriter, r *http.Request, db *redis.Client, ses
 	}
 
 	lst := slice.Val()
-	types := make(map[string]string)
+	types := make(map[string]*ProblemType)
 	for i := 0; i < len(lst); i += 2 {
-		types[lst[i]] = lst[i+1]
+		tag, raw := lst[i], lst[i+1]
+
+		// parse JSON data
+		problemType := new(ProblemType)
+		if err := json.Unmarshal([]byte(raw), problemType); err != nil {
+			log.Printf("Unable to parse JSON type description: %v", err)
+			http.Error(w, "DB error", http.StatusInternalServerError)
+			return
+		}
+
+		types[tag] = problemType
 	}
 
 	writeJson(w, r, types)
@@ -351,7 +362,7 @@ func problem_save_common(w http.ResponseWriter, r *http.Request, db *redis.Clien
 		string(problemJson),
 	})
 	if iface.Err() != nil {
-		log.Printf("DB error saving problem: %v", err)
+		log.Printf("DB error saving problem: %v", iface.Err())
 		http.Error(w, "DB error", http.StatusInternalServerError)
 		return
 	}
@@ -366,6 +377,40 @@ func problem_save_common(w http.ResponseWriter, r *http.Request, db *redis.Clien
 	}
 
 	writeJson(w, r, final)
+}
+
+func problem_get(w http.ResponseWriter, r *http.Request, db *redis.Client, session *sessions.Session) {
+	id := r.URL.Query().Get(":id")
+
+	b := db.SIsMember("index:problems:all", id)
+	if b.Err() != nil {
+		log.Printf("DB error checking if problem exists: %v", b.Err())
+		http.Error(w, "DB error", http.StatusInternalServerError)
+		return
+	}
+	if !b.Val() {
+		log.Printf("Problem [%s] not found", id)
+		http.Error(w, "Not found", http.StatusNotFound)
+		return
+	}
+
+	iface := db.EvalSha(luaScripts["problemget"], []string{}, []string{id})
+	if iface.Err() != nil {
+		log.Printf("DB error getting problem: %v", iface.Err())
+		http.Error(w, "DB error", http.StatusInternalServerError)
+		return
+	}
+	raw := iface.Val().(string)
+
+	// decode the problem object
+	problem := new(Problem)
+	if err := json.Unmarshal([]byte(raw), problem); err != nil {
+		log.Printf("Unable to parse JSON response from DB: %v", err)
+		http.Error(w, "DB error", http.StatusInternalServerError)
+		return
+	}
+
+	writeJson(w, r, problem)
 }
 
 func problem_tags(w http.ResponseWriter, r *http.Request, db *redis.Client, session *sessions.Session) {

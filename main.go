@@ -27,6 +27,7 @@ type Config struct {
 
 	BrowserIDVerifyURL string
 	BrowserIDAudience  string
+	StudentEmailDomain string
 }
 
 const configFile = "config.json"
@@ -35,6 +36,7 @@ const scriptPath = "scripts"
 var config Config
 var timeZone *time.Location
 var store sessions.Store
+var pool *redis.Client
 
 // map from filenames to sha1 hashes of all scripts that are loaded
 var luaScripts = make(map[string]string)
@@ -66,11 +68,11 @@ func main() {
 	})
 
 	// load Lua scripts
-	db := redis.NewTCPClient(config.RedisHost, config.RedisPassword, config.RedisDB)
-	defer db.Close()
-	loadScripts(db, scriptPath)
-	setupProblemTypes(db)
-	restoreQueue(db)
+	pool = redis.NewTCPClient(config.RedisHost, config.RedisPassword, config.RedisDB)
+	defer pool.Close()
+	loadScripts(pool, scriptPath)
+	setupProblemTypes(pool)
+	restoreQueue(pool)
 
 	log.Fatal(http.ListenAndServe(":8080", nil))
 }
@@ -99,37 +101,35 @@ func cron(db *redis.Client) error {
 type handlerNoAuth func(http.ResponseWriter, *http.Request, *redis.Client, *sessions.Session)
 
 func (h handlerNoAuth) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	log.Printf("%s %s", r.Method, r.URL.String())
+
 	// get the session (or create a new one)
 	session, _ := store.Get(r, "codrilla-session")
 
-	// get a db connection
-	db := redis.NewTCPClient(config.RedisHost, config.RedisPassword, config.RedisDB)
-	defer db.Close()
-	if err := cron(db); err != nil {
+	if err := cron(pool); err != nil {
 		http.Error(w, "DB error running cron updates", http.StatusInternalServerError)
 		return
 	}
 
 	// call the handler
-	h(w, r, db, session)
+	h(w, r, pool, session)
 }
 
 type handlerAdmin func(http.ResponseWriter, *http.Request, *redis.Client, *sessions.Session)
 
 func (h handlerAdmin) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	log.Printf("%s %s", r.Method, r.URL.String())
+
 	// get the session (or create a new one)
 	session, _ := store.Get(r, "codrilla-session")
 
-	// get a db connection
-	db := redis.NewTCPClient(config.RedisHost, config.RedisPassword, config.RedisDB)
-	defer db.Close()
-	if err := cron(db); err != nil {
+	if err := cron(pool); err != nil {
 		http.Error(w, "DB error running cron updates", http.StatusInternalServerError)
 		return
 	}
 
 	// verify that the user is logged in
-	if err := checkSession(db, session); err != nil {
+	if err := checkSession(pool, session); err != nil {
 		http.Error(w, err.Error(), http.StatusForbidden)
 		return
 	}
@@ -142,25 +142,24 @@ func (h handlerAdmin) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// call the handler
-	h(w, r, db, session)
+	h(w, r, pool, session)
 }
 
 type handlerInstructor func(http.ResponseWriter, *http.Request, *redis.Client, *sessions.Session)
 
 func (h handlerInstructor) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	log.Printf("%s %s", r.Method, r.URL.String())
+
 	// get the session (or create a new one)
 	session, _ := store.Get(r, "codrilla-session")
 
-	// get a db connection
-	db := redis.NewTCPClient(config.RedisHost, config.RedisPassword, config.RedisDB)
-	defer db.Close()
-	if err := cron(db); err != nil {
+	if err := cron(pool); err != nil {
 		http.Error(w, "DB error running cron updates", http.StatusInternalServerError)
 		return
 	}
 
 	// verify that the user is logged in
-	if err := checkSession(db, session); err != nil {
+	if err := checkSession(pool, session); err != nil {
 		http.Error(w, err.Error(), http.StatusForbidden)
 		return
 	}
@@ -173,25 +172,24 @@ func (h handlerInstructor) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// call the handler
-	h(w, r, db, session)
+	h(w, r, pool, session)
 }
 
 type handlerInstructorJson func(http.ResponseWriter, *http.Request, *redis.Client, *sessions.Session, *json.Decoder)
 
 func (h handlerInstructorJson) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	log.Printf("%s %s", r.Method, r.URL.String())
+
 	// get the session (or create a new one)
 	session, _ := store.Get(r, "codrilla-session")
 
-	// get a db connection
-	db := redis.NewTCPClient(config.RedisHost, config.RedisPassword, config.RedisDB)
-	defer db.Close()
-	if err := cron(db); err != nil {
+	if err := cron(pool); err != nil {
 		http.Error(w, "DB error running cron updates", http.StatusInternalServerError)
 		return
 	}
 
 	// verify that the user is logged in
-	if err := checkSession(db, session); err != nil {
+	if err := checkSession(pool, session); err != nil {
 		http.Error(w, err.Error(), http.StatusForbidden)
 		return
 	}
@@ -211,49 +209,47 @@ func (h handlerInstructorJson) ServeHTTP(w http.ResponseWriter, r *http.Request)
 	defer r.Body.Close()
 
 	// call the handler
-	h(w, r, db, session, decoder)
+	h(w, r, pool, session, decoder)
 }
 
 type handlerStudent func(http.ResponseWriter, *http.Request, *redis.Client, *sessions.Session)
 
 func (h handlerStudent) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	log.Printf("%s %s", r.Method, r.URL.String())
+
 	// get the session (or create a new one)
 	session, _ := store.Get(r, "codrilla-session")
 
-	// get a db connection
-	db := redis.NewTCPClient(config.RedisHost, config.RedisPassword, config.RedisDB)
-	defer db.Close()
-	if err := cron(db); err != nil {
+	if err := cron(pool); err != nil {
 		http.Error(w, "DB error running cron updates", http.StatusInternalServerError)
 		return
 	}
 
 	// verify that the user is logged in
-	if err := checkSession(db, session); err != nil {
+	if err := checkSession(pool, session); err != nil {
 		http.Error(w, err.Error(), http.StatusForbidden)
 		return
 	}
 
 	// call the handler
-	h(w, r, db, session)
+	h(w, r, pool, session)
 }
 
 type handlerStudentJson func(http.ResponseWriter, *http.Request, *redis.Client, *sessions.Session, *json.Decoder)
 
 func (h handlerStudentJson) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	log.Printf("%s %s", r.Method, r.URL.String())
+
 	// get the session (or create a new one)
 	session, _ := store.Get(r, "codrilla-session")
 
-	// get a db connection
-	db := redis.NewTCPClient(config.RedisHost, config.RedisPassword, config.RedisDB)
-	defer db.Close()
-	if err := cron(db); err != nil {
+	if err := cron(pool); err != nil {
 		http.Error(w, "DB error running cron updates", http.StatusInternalServerError)
 		return
 	}
 
 	// verify that the user is logged in
-	if err := checkSession(db, session); err != nil {
+	if err := checkSession(pool, session); err != nil {
 		http.Error(w, err.Error(), http.StatusForbidden)
 		return
 	}
@@ -266,7 +262,7 @@ func (h handlerStudentJson) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	defer r.Body.Close()
 
 	// call the handler
-	h(w, r, db, session, decoder)
+	h(w, r, pool, session, decoder)
 }
 
 func writeJson(w http.ResponseWriter, r *http.Request, elt interface{}) {
@@ -343,7 +339,7 @@ func checkJsonRequest(w http.ResponseWriter, r *http.Request) bool {
 
 	if r.Header.Get("Content-Type") != "application/json" {
 		log.Printf("JSON request called with Content-Type %s", r.Header.Get("Content-Type"))
-		http.Error(w, "Request must be in JSON format; must include Content-Type: appluication/json in request", http.StatusBadRequest)
+		http.Error(w, "Request must be in JSON format; must include Content-Type: application/json in request", http.StatusBadRequest)
 		return false
 	}
 
