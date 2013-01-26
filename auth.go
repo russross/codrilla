@@ -258,5 +258,7 @@ func checkSession(db *redis.Client, session *sessions.Session) error {
 		return fmt.Errorf("Invalid role in session")
 	}
 
+	log.Printf("  %s: %s expires in %v", role, email, expires.Sub(now))
+
 	return nil
 }

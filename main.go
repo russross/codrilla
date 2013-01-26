@@ -101,7 +101,7 @@ func cron(db *redis.Client) error {
 type handlerNoAuth func(http.ResponseWriter, *http.Request, *redis.Client, *sessions.Session)
 
 func (h handlerNoAuth) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	log.Printf("%s %s", r.Method, r.URL.String())
+	log.Printf("%s %s", r.Method, r.URL.Path)
 
 	// get the session (or create a new one)
 	session, _ := store.Get(r, "codrilla-session")
@@ -118,7 +118,7 @@ func (h handlerNoAuth) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 type handlerAdmin func(http.ResponseWriter, *http.Request, *redis.Client, *sessions.Session)
 
 func (h handlerAdmin) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	log.Printf("%s %s", r.Method, r.URL.String())
+	log.Printf("%s %s", r.Method, r.URL.Path)
 
 	// get the session (or create a new one)
 	session, _ := store.Get(r, "codrilla-session")
@@ -148,7 +148,7 @@ func (h handlerAdmin) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 type handlerInstructor func(http.ResponseWriter, *http.Request, *redis.Client, *sessions.Session)
 
 func (h handlerInstructor) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	log.Printf("%s %s", r.Method, r.URL.String())
+	log.Printf("%s %s", r.Method, r.URL.Path)
 
 	// get the session (or create a new one)
 	session, _ := store.Get(r, "codrilla-session")
@@ -178,7 +178,7 @@ func (h handlerInstructor) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 type handlerInstructorJson func(http.ResponseWriter, *http.Request, *redis.Client, *sessions.Session, *json.Decoder)
 
 func (h handlerInstructorJson) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	log.Printf("%s %s", r.Method, r.URL.String())
+	log.Printf("%s %s", r.Method, r.URL.Path)
 
 	// get the session (or create a new one)
 	session, _ := store.Get(r, "codrilla-session")
@@ -215,7 +215,7 @@ func (h handlerInstructorJson) ServeHTTP(w http.ResponseWriter, r *http.Request)
 type handlerStudent func(http.ResponseWriter, *http.Request, *redis.Client, *sessions.Session)
 
 func (h handlerStudent) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	log.Printf("%s %s", r.Method, r.URL.String())
+	log.Printf("%s %s", r.Method, r.URL.Path)
 
 	// get the session (or create a new one)
 	session, _ := store.Get(r, "codrilla-session")
@@ -238,7 +238,7 @@ func (h handlerStudent) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 type handlerStudentJson func(http.ResponseWriter, *http.Request, *redis.Client, *sessions.Session, *json.Decoder)
 
 func (h handlerStudentJson) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	log.Printf("%s %s", r.Method, r.URL.String())
+	log.Printf("%s %s", r.Method, r.URL.Path)
 
 	// get the session (or create a new one)
 	session, _ := store.Get(r, "codrilla-session")

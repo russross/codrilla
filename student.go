@@ -46,7 +46,7 @@ func student_grades(w http.ResponseWriter, r *http.Request, db *redis.Client, se
 
 	iface := db.EvalSha(luaScripts["studentlistgrades"], nil, []string{email, courseTag})
 	if iface.Err() != nil {
-		log.Printf("DB error getting student course grades for %s course: %v", email, courseTag, iface.Err())
+		log.Printf("DB error getting student %s course grades for %s: %v", email, courseTag, iface.Err())
 		http.Error(w, "DB error", http.StatusInternalServerError)
 		return
 	}
