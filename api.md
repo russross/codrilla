@@ -227,15 +227,19 @@ Problems
 
         GET /problem/tags
 
-    Returns a list of problem tags, listed from high priority to
-    low. Each contains:
+    Returns the following:
+
+    *   Tags: the list of tags, in order from high priority to low
+    *   Problems: all problems, mapped by ID to problem object
+
+    Each tag contains:
 
     *   Tag: the tag
     *   Description: the friendly description of the tag
     *   Priority: int from 0 to 100, higher being more important
-    *   Problems: list of problems with this tag
+    *   Problems: list of problem IDs with this tag
 
-    Problems in the list each contain
+    Problems in the object are mapped by ID, and each contains:
 
     *   ID: the problem ID
     *   Name: problem name

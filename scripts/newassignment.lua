@@ -23,7 +23,8 @@ local closeTime = ARGV[5]
 if not ARGV[6] or ARGV[6] == '' then
 	error('newassignment: missing forcredit')
 end
-local forcredit = (ARGV[6] == 'true')
+local forCredit = 'false'
+if ARGV[6] == 'true' then forCredit = 'true' end
 
 -- make sure this is an active course
 if redis.call('sismember', 'index:courses:active', courseTag) == 0 then

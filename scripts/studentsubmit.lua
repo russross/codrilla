@@ -1,4 +1,4 @@
--- called with: email, asstID, submissionJson
+-- called with: email, asstID, data
 
 if not ARGV[1] or ARGV[1] == '' then
 	error("studentsubmit: missing email address")
@@ -48,7 +48,7 @@ if redis.call('get', 'solution:'..solID..':student') ~= email then
 end
 
 -- store this submission
-redis.call('rpush', 'solution:'..solID..':submissions', submissionJson)
+redis.call('rpush', 'solution:'..solID..':submissions', data)
 
 -- trigger the grader, unless this solution already has a submission in progress
 if redis.call('sismember', 'queue:solution:processing', solID) == 0 then

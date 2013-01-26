@@ -28,8 +28,11 @@ end
 local getAssignmentListingStudent = function(course, assignment, email, result)
 	-- get the student solution id
 	local solution = redis.call('hget', 'student:'..email..':solutions:'..course, assignment)
-	if solution == '' then
-		return nil
+	if not solution or solution == '' then
+		result.Attempts = 0
+		result.ToBeGraded = 0
+		result.Passed = false
+		return
 	end
 
 	result.Attempts = tonumber(redis.call('llen', 'solution:'..solution..':submissions'))
@@ -52,8 +55,8 @@ if redis.call('sismember', 'course:'..course..':students', email) == 0 then
 end
 
 -- make sure this is an active assignment
-if redis.call('sismember', 'course:'..course..':assignments:active', id) == 0 then
-	error(id..' is not an active assignment')
+if redis.call('sismember', 'course:'..course..':assignments:active', asstID) == 0 then
+	error(asstID..' is not an active assignment')
 end
 
 local problem = redis.call('get', 'assignment:'..asstID..':problem')
@@ -65,18 +68,18 @@ result.CourseName = redis.call('get', 'course:'..course..':name')
 result.CourseTag = course
 local problemtypetag = redis.call('get', 'problem:'..problem..':type')
 
-result.ProblemType = cjson.decode(redis.call('hget', 'grader:problemtypes', result.Type))
+result.ProblemType = cjson.decode(redis.call('hget', 'grader:problemtypes', problemtypetag))
 
 -- WARNING: this is the raw problem; it must be filtered against
 -- the fieldlist before being handed to the student
 result.ProblemData = cjson.decode(redis.call('get', 'problem:'..problem..':data'))
 
 result.Attempt = ''
-result.Passed = 'false'
+result.Passed = false
 
 -- see if the student has an attempt
 local solution = redis.call('hget', 'student:'..email..':solutions:'..course, asstID)
-if tonumber(solution) > 0 then
+if solution and tonumber(solution) > 0 then
 	result.Attempt = redis.call('lindex', 'solution:'..solution..':submissions', -1)
 	if redis.call('get', 'solution:'..solution..':passed') == 1 then
 		result.Passed = 'true'

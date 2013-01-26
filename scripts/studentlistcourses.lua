@@ -38,8 +38,11 @@ end
 local getAssignmentListingStudent = function(course, assignment, email, result)
 	-- get the student solution id
 	local solution = redis.call('hget', 'student:'..email..':solutions:'..course, assignment)
-	if solution == '' then
-		return nil
+	if not solution or solution == '' then
+		result.Attempts = 0
+		result.ToBeGraded = 0
+		result.Passed = false
+		return
 	end
 
 	result.Attempts = tonumber(redis.call('llen', 'solution:'..solution..':submissions'))

@@ -106,7 +106,7 @@ func student_submit(w http.ResponseWriter, r *http.Request, db *redis.Client, se
 	assignmentID := r.URL.Query().Get(":id")
 
 	submission := make(map[string]interface{})
-	if err := decoder.Decode(submission); err != nil {
+	if err := decoder.Decode(&submission); err != nil {
 		log.Printf("Failure decoding JSON request: %v", err)
 		http.Error(w, "Failure decoding JSON request", http.StatusBadRequest)
 		return

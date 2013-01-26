@@ -34,7 +34,7 @@ table.sort(courseList)
 for _, courseTag in ipairs(courseList) do
 	local elt = {}
 	elt.Name = redis.call('get', 'course:'..courseTag..':name')
-	elt.Close = redis.call('get', 'course:'..courseTag..':close')
+	elt.Close = tonumber(redis.call('get', 'course:'..courseTag..':close'))
 	elt.Instructors = redis.call('smembers', 'course:'..courseTag..':instructors')
 	elt.Students = redis.call('smembers', 'course:'..courseTag..':students')
 

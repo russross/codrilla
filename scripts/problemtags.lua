@@ -1,10 +1,12 @@
 -- called with no parameters
 
 local result = {}
+result.Tags = {}
+result.Problems = {}
 
 local getProblem = function (id)
 	local problem = {}
-	problem.ID = tonumber(id)
+	problem.ID = id
 	problem.Name = redis.call('get', 'problem:'..id..':name')
 	problem.Type = redis.call('get', 'problem:'..id..':type')
 	problem.Tags = redis.call('smembers', 'problem:'..id..':tags')
@@ -19,11 +21,14 @@ for i, tag in ipairs(lst) do
 	elt.Tag = tag
 	elt.Description = redis.call('get', 'tag:'..tag..':description')
 	elt.Priority = tonumber(redis.call('get', 'tag:'..tag..':priority'))
+	local problems = redis.call('smembers', 'tag:'..tag..':problems')
 	elt.Problems = {}
-	for i, id in ipairs(redis.call('smembers', 'tag:'..tag..':problems')) do
-		table.insert(elt.Problems, getProblem(id))
+	for i, id in ipairs(problems) do
+		local n = tonumber(id)
+		table.insert(elt.Problems, n)
+		result.Problems[n] = getProblem(n)
 	end
-	table.insert(result, elt)
+	table.insert(result.Tags, elt)
 end
 
-return result
+return cjson.encode(result)

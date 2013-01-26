@@ -289,7 +289,7 @@ func problem_save_common(w http.ResponseWriter, r *http.Request, db *redis.Clien
 		return
 	}
 
-	problem.ID = 0
+	problem.ID = id
 
 	// make sure it has a name
 	problem.Name = strings.TrimSpace(problem.Name)
