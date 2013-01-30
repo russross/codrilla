@@ -44,6 +44,7 @@ type ProblemField struct {
 	Default string
 	Editor  string
 	Student string
+	Result  string
 }
 
 type ProblemType struct {
@@ -63,6 +64,7 @@ var Python27InputOutputDescription = &ProblemType{
 			Type:    "markdown",
 			Editor:  "edit",
 			Student: "view",
+			Result: "view",
 		},
 		{
 			Name:    "Reference",
@@ -71,15 +73,17 @@ var Python27InputOutputDescription = &ProblemType{
 			Type:    "python",
 			Editor:  "edit",
 			Student: "nothing",
+			Result: "nothing",
 		},
 		{
-			Name:    "TestCases",
+			Name:    "Tests",
 			Prompt:  "Test cases",
 			Title:   "Test cases",
 			Type:    "text",
 			List:    true,
 			Editor:  "edit",
 			Student: "view",
+			Result: "view",
 		},
 		{
 			Name:    "Candidate",
@@ -90,7 +94,7 @@ var Python27InputOutputDescription = &ProblemType{
 			Student: "edit",
 		},
 		{
-			Name:    "Seconds",
+			Name:    "MaxSeconds",
 			Prompt:  "Max time permitted in seconds",
 			Title:   "Max time permitted in seconds",
 			Type:    "int",
@@ -99,13 +103,32 @@ var Python27InputOutputDescription = &ProblemType{
 			Student: "view",
 		},
 		{
-			Name:    "MB",
+			Name:    "MaxMB",
 			Prompt:  "Max memory permitted in megabytes",
 			Title:   "Max memory permitted in megabytes",
 			Type:    "int",
 			Default: "32",
 			Editor:  "edit",
 			Student: "view",
+		},
+		{
+			Name:    "Results",
+			Prompt:  "Result for each test",
+			Title:   "Result for each test",
+			Type:    "text",
+			List:    true,
+			Editor:  "nothing",
+			Student: "nothing",
+			Result:  "view",
+		},
+		{
+			Name: "Passed",
+			Prompt:  "Did the solution pass?",
+			Title:   "Did the solution pass?",
+			Type:    "bool",
+			Editor:  "nothing",
+			Student: "nothing",
+			Result:  "view",
 		},
 	},
 }
@@ -131,7 +154,7 @@ var Python27ExpressionDescription = &ProblemType{
 			Student: "nothing",
 		},
 		{
-			Name:    "TestCases",
+			Name:    "Tests",
 			Prompt:  "Test cases",
 			Title:   "Test cases",
 			Type:    "string",
@@ -148,7 +171,7 @@ var Python27ExpressionDescription = &ProblemType{
 			Student: "edit",
 		},
 		{
-			Name:    "Seconds",
+			Name:    "MaxSeconds",
 			Prompt:  "Max time permitted in seconds",
 			Title:   "Max time permitted in seconds",
 			Type:    "int",
@@ -157,7 +180,7 @@ var Python27ExpressionDescription = &ProblemType{
 			Student: "view",
 		},
 		{
-			Name:    "MB",
+			Name:    "MaxMB",
 			Prompt:  "Max memory permitted in megabytes",
 			Title:   "Max memory permitted in megabytes",
 			Type:    "int",

@@ -16,6 +16,7 @@ import (
 func init() {
 	r := pat.New()
 	r.Add("POST", `/auth/login/browserid`, handlerNoAuth(auth_login_browserid))
+	r.Add("GET", `/auth/login/google`, handlerNoAuth(auth_login_google))
 	r.Add("POST", `/auth/logout`, handlerNoAuth(auth_logout))
 	http.Handle("/auth/", r)
 }
@@ -24,17 +25,20 @@ func auth_login_browserid(w http.ResponseWriter, r *http.Request, db *redis.Clie
 	// get the assertion from the submitted form data
 	assertion := strings.TrimSpace(r.FormValue("Assertion"))
 	if assertion == "" {
-		http.Error(w, "Missing BrowserID Assertion", http.StatusBadRequest)
+		log.Printf("Missing BrowserID assertion")
+		http.Error(w, "Missing BrowserID assertion", http.StatusBadRequest)
 		return
 	}
 
 	// check for a successful login
 	email, err := browserid_verify(assertion)
 	if err != nil {
-		http.Error(w, "Error while verifying BrowserID login: "+err.Error(), http.StatusInternalServerError)
+		log.Printf("Error while verifying BrowserID login: %v", err)
+		http.Error(w, "Error while verifying BrowserID login", http.StatusInternalServerError)
 		return
 	}
 	if email == "" {
+		log.Printf("BrowserID login failed")
 		http.Error(w, "Login failed", http.StatusForbidden)
 		return
 	}
@@ -42,7 +46,41 @@ func auth_login_browserid(w http.ResponseWriter, r *http.Request, db *redis.Clie
 	log.Printf("BrowserID login for [%s]", email)
 
 	// create a login session cookie
-	createLoginSession(w, r, db, session, email)
+	createLoginSession(w, r, db, session, email, false)
+}
+
+func auth_login_google(w http.ResponseWriter, r *http.Request, db *redis.Client, session *sessions.Session) {
+	errorcode := strings.TrimSpace(r.URL.Query().Get("error"))
+	if errorcode != "" {
+		log.Printf("Error from Google OAuth2.0 login attempt: %s", errorcode)
+		http.Error(w, "Error from Google OAuth2.0 login attempt", http.StatusForbidden)
+		return
+	}
+
+	code := strings.TrimSpace(r.URL.Query().Get("code"))
+	if code == "" {
+		log.Printf("Missing Google OAuth2.0 code")
+		http.Error(w, "Missing Google OAuth2.0 code", http.StatusBadRequest)
+		return
+	}
+
+	// check for a successful login
+	email, err := google_verify(code)
+	if err != nil {
+		log.Printf("Error while verifying Google OAuth2.0 code: %v", err)
+		http.Error(w, "Error while verifying Google OAuth2.0 code", http.StatusInternalServerError)
+		return
+	}
+	if email == "" {
+		log.Printf("Google OAuth2.0 login failed")
+		http.Error(w, "Login failed", http.StatusForbidden)
+		return
+	}
+
+	log.Printf("Google OAuth2.0 login for [%s]", email)
+
+	// create a login session cookie
+	createLoginSession(w, r, db, session, email, true)
 }
 
 func auth_logout(w http.ResponseWriter, r *http.Request, db *redis.Client, session *sessions.Session) {
@@ -56,6 +94,10 @@ func auth_logout(w http.ResponseWriter, r *http.Request, db *redis.Client, sessi
 	sessions.Save(r, w)
 
 	// clear the other cookies
+	email, err := r.Cookie("codrilla-email")
+	if err != nil {
+		email = nil
+	}
 	http.SetCookie(w, &http.Cookie{
 		Name:    "codrilla-email",
 		Path:    "/",
@@ -74,10 +116,14 @@ func auth_logout(w http.ResponseWriter, r *http.Request, db *redis.Client, sessi
 		Expires: expires,
 		MaxAge:  -1,
 	})
-	log.Printf("Logout")
+	if email == nil {
+		log.Printf("Logout")
+	} else {
+		log.Printf("Logout [%s]", email.Value)
+	}
 }
 
-func createLoginSession(w http.ResponseWriter, r *http.Request, db *redis.Client, session *sessions.Session, email string) {
+func createLoginSession(w http.ResponseWriter, r *http.Request, db *redis.Client, session *sessions.Session, email string, redirect bool) {
 	// start by assuming this is a student
 	role := "student"
 
@@ -136,7 +182,11 @@ func createLoginSession(w http.ResponseWriter, r *http.Request, db *redis.Client
 		MaxAge:  int(expires.Sub(now).Seconds()),
 	})
 
-	writeJson(w, r, map[string]string{"Email": email})
+	if redirect {
+		http.Redirect(w, r, "/", http.StatusFound)
+	} else {
+		writeJson(w, r, map[string]string{"Email": email})
+	}
 }
 
 type BrowserIDVerificationResponse struct {
@@ -186,6 +236,94 @@ func browserid_verify(assertion string) (email string, err error) {
 	}
 
 	return strings.ToLower(verify.Email), nil
+}
+
+type GoogleOAuth20VerificationResponse struct {
+	AccessToken string `json:"access_token"`
+	ExpiresIn int64 `json:"expires_in"`
+	TokenType string `json:"token_type"`
+}
+
+type GoogleUserinfoResponse struct {
+	ID string `json:"id"`
+	Email string `json:"email"`
+	VerifiedEmail bool `json:"verified_email"`
+}
+
+func google_verify(code string) (email string, err error) {
+	// try to verify the code with Google server
+	resp, err := http.PostForm(
+			config.GoogleVerifyURL,
+			url.Values{
+		"code": {code},
+		"client_id": {config.GoogleClientID},
+		"client_secret": {config.GoogleClientSecret},
+		"redirect_uri": {config.GoogleRedirectURI},
+		"grant_type": {"authorization_code"},
+	})
+
+	if err != nil {
+		log.Printf("Failure contacting Google OAuth2.0 verification server: %v", err)
+		return "", fmt.Errorf("Failure contacting verification server", err)
+	}
+	if resp.StatusCode != 200 {
+		log.Printf("Google OAuth2.0 returned a non-200 response code: %d", resp.StatusCode)
+		return "", fmt.Errorf("Google server returned an error code")
+	}
+	defer resp.Body.Close()
+
+	// decode the body
+	verify := new(GoogleOAuth20VerificationResponse)
+	if err = json.NewDecoder(resp.Body).Decode(verify); err != nil {
+		log.Printf("Failure decoding Google OAuth2.0 verification: %v", err)
+		return "", fmt.Errorf("Failure decoding verification")
+	}
+
+	// sanity checks
+	if verify.AccessToken == "" {
+		return "", fmt.Errorf("Empty access token")
+	}
+	if verify.ExpiresIn < 1 {
+		return "", fmt.Errorf("Access token already expired")
+	}
+	if verify.TokenType != "Bearer" {
+		log.Printf("Token type was [%s]", verify.TokenType)
+		return "", fmt.Errorf("Non-bearer token type returned")
+	}
+
+	// use the access token to get the email address
+	client := &http.Client{}
+	req, err := http.NewRequest("GET", config.GoogleGetEmailURL, nil)
+	if err != nil {
+		log.Printf("Error creating request object to get email address: %v", err)
+		return "", fmt.Errorf("Error creating request to get email address")
+	}
+	req.Header.Set("Authorization", "OAuth " + verify.AccessToken)
+	if resp, err = client.Do(req); err != nil {
+		log.Printf("Request to get email address failed: %v", err)
+		return "", fmt.Errorf("Request to get email address failed")
+	}
+	if resp.StatusCode != 200 {
+		log.Printf("Google userinfo returned a non-200 response code: %d", resp.StatusCode)
+		return "", fmt.Errorf("Google userinfo server returned an error code")
+	}
+	defer resp.Body.Close()
+
+	// decode the body
+	info := new(GoogleUserinfoResponse)
+	if err = json.NewDecoder(resp.Body).Decode(info); err != nil {
+		log.Printf("Failure decoding Google userinfo: %v", err)
+		return "", fmt.Errorf("Failure decoding userinfo")
+	}
+
+	if info.Email == "" {
+		return "", fmt.Errorf("Empty email address")
+	}
+	if !info.VerifiedEmail {
+		log.Printf("Warning: unverified email address for [%s]", info.Email)
+	}
+
+	return strings.ToLower(info.Email), nil
 }
 
 func checkSession(db *redis.Client, session *sessions.Session) error {

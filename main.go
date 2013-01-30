@@ -27,6 +27,13 @@ type Config struct {
 
 	BrowserIDVerifyURL string
 	BrowserIDAudience  string
+
+	GoogleVerifyURL string
+	GoogleGetEmailURL string
+	GoogleClientID string
+	GoogleClientSecret string
+	GoogleRedirectURI string
+
 	StudentEmailDomain string
 }
 
@@ -64,7 +71,11 @@ func main() {
 	http.Handle("/js/", http.StripPrefix("/js", http.FileServer(http.Dir("js"))))
 	http.Handle("/img/", http.StripPrefix("/img", http.FileServer(http.Dir("img"))))
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		http.ServeFile(w, r, "index.html")
+		if r.URL.Path != "/" {
+			http.Error(w, "Not found", http.StatusNotFound)
+			return
+		}
+		http.ServeFile(w, r, "student.html")
 	})
 
 	// load Lua scripts

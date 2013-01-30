@@ -1,69 +1,99 @@
-jQuery(function ($) {
-    var getCookies = function () {
-        CODRILLA = {
-              Email: '',
-              Role: '',
-              Expires: 0,
-              LoggedIn: false
-        };
-        var n = Number($.cookie('codrilla-expires'));
-        CODRILLA.Expires = new Date(n * 1000);
-        var now = new Date();
-        if (CODRILLA.Expires > now) {
-            CODRILLA.Email = $.cookie('codrilla-email');
-            CODRILLA.Role = $.cookie('codrilla-role');
-            CODRILLA.LoggedIn = true;
-        } else {
-            CODRILLA.Email = null;
-            CODRILLA.Role = null;
-            CODRILLA.LoggedIn = false;
-        }
-    };
+	jQuery(function ($) {
+		var getCookies = function () {
+			CODRILLA = {
+				  Email: '',
+				  Role: '',
+				  Expires: 0,
+				  LoggedIn: false,
+				  LoginMethod: 'google'
+			};
+			var n = Number($.cookie('codrilla-expires'));
+			CODRILLA.Expires = new Date(n * 1000);
+			var now = new Date();
+			if (CODRILLA.Expires > now) {
+				CODRILLA.Email = $.cookie('codrilla-email');
+				CODRILLA.Role = $.cookie('codrilla-role');
+				CODRILLA.LoggedIn = true;
+			} else {
+				CODRILLA.Email = null;
+				CODRILLA.Role = null;
+				CODRILLA.LoggedIn = false;
+			}
+		};
 
-    getCookies();
+		getCookies();
 
-    // login handling
-    navigator.id.watch({
-        loggedInUser: CODRILLA.Email,
-        onlogin: function(assertion) {
-            $.ajax({
-                type: 'POST',
-                url: '/auth/login/browserid',
-                dataType: 'json',
-                data: { Assertion: assertion },
-                success: function(res, status, xhr) {
-                    getCookies();
-                    setupLoggedIn();
-                },
-                error: function(res, status, xhr) {
-                    console.log('login failure');
-                    console.log(res);
-                    setupLoggedOut();
-                }
-            });
-        },
-        onlogout: function() {
-            setupLoggedOut();
-            $.ajax({
-                type: 'POST',
-                url: '/auth/logout',
-                success: function(res, status, xhr) {
-                },
-                error: function(res, status, xhr) {
-                    console.log('logout failure');
-                    console.log(res);
-                }
-            });
-        } 
-    });
-    $('#persona-login-button').click(function () {
-        navigator.id.request();
-        return false;
-    });
-    $('#logout-button').click(function () {
-        navigator.id.logout();
-        return false;
-    });
+		// login handling
+		if (CODRILLA.LoginMethod == 'persona') {
+			navigator.id.watch({
+				loggedInUser: CODRILLA.Email,
+				onlogin: function(assertion) {
+					$.ajax({
+						type: 'POST',
+						url: '/auth/login/browserid',
+						dataType: 'json',
+						data: { Assertion: assertion },
+						success: function(res, status, xhr) {
+							getCookies();
+							setupLoggedIn();
+						},
+						error: function(res, status, xhr) {
+							console.log('login failure');
+							console.log(res);
+							setupLoggedOut();
+						}
+					});
+				},
+				onlogout: function() {
+					setupLoggedOut();
+					$.ajax({
+						type: 'POST',
+						url: '/auth/logout',
+						success: function(res, status, xhr) {
+							setupLoggedOut();
+						},
+						error: function(res, status, xhr) {
+							console.log('logout failure');
+							console.log(res);
+							setupLoggedOut();
+						}
+					});
+				} 
+			});
+		}
+		$('#persona-login-button').click(function () {
+			navigator.id.request();
+			return false;
+		});
+		$('#google-login-button').click(function () {
+			var url = 'https://accounts.google.com/o/oauth2/auth' +
+				'?response_type=code' +
+				'&client_id=854211025378.apps.googleusercontent.com' +
+				'&redirect_uri=http://localhost:8080/auth/login/google' +
+				'&scope=https://www.googleapis.com/auth/userinfo.email';
+			var loginwindow = window.open(url, 'login');
+			if (window.focus) loginwindow.focus();
+			return false;
+		});
+		$('#logout-button').click(function () {
+			if (CODRILLA.LoginMethod == 'persona')
+			navigator.id.logout();
+		else {
+			$.ajax({
+				type: 'POST',
+				url: '/auth/logout',
+				success: function(res, status, xhr) {
+					setupLoggedOut();
+				},
+				error: function(res, status, xhr) {
+					console.log('logout failure');
+					console.log(res);
+					setupLoggedOut();
+				}
+			});
+		}
+		return false;
+	});
 
     var setupNewProblem = function () {
         $('#newproblemspace').empty();
