@@ -84,7 +84,7 @@ result.Passed = false
 -- see if the student has an attempt
 local solution = redis.call('hget', 'student:'..email..':solutions:'..course, asstID)
 if solution and tonumber(solution) > 0 then
-	result.Attempt = redis.call('lindex', 'solution:'..solution..':submissions', -1)
+	result.Attempt = cjson.decode(redis.call('lindex', 'solution:'..solution..':submissions', -1))
 	if redis.call('get', 'solution:'..solution..':passed') == 1 then
 		result.Passed = 'true'
 	end

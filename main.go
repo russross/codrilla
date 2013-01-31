@@ -348,7 +348,7 @@ func checkJsonRequest(w http.ResponseWriter, r *http.Request) bool {
 		return false
 	}
 
-	if r.Header.Get("Content-Type") != "application/json" {
+	if !strings.Contains(r.Header.Get("Content-Type"), "application/json") {
 		log.Printf("JSON request called with Content-Type %s", r.Header.Get("Content-Type"))
 		http.Error(w, "Request must be in JSON format; must include Content-Type: application/json in request", http.StatusBadRequest)
 		return false

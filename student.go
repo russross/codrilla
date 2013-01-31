@@ -67,7 +67,7 @@ type StudentAssignment struct {
 	CourseTag   string
 	ProblemType *ProblemType
 	ProblemData map[string]interface{}
-	Attempt     string
+	Attempt     map[string]interface{}
 	Passed      bool
 }
 
