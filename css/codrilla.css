@@ -5,3 +5,10 @@ body {
 #newproblemspace > div {
   margin-top: 3em;
 }
+
+li.green {
+  color: green;
+}
+li.red {
+  color: red;
+}

@@ -116,16 +116,16 @@
         $editor.appendTo('#newproblemspace');
     };
 
-    var createEditor = function (description, contents, role) {
+    var createEditor = function (fieldList, contents, role) {
         var $main = $('<div />');
 
         // run through the list of fields
-        $.each(description, function (i, field) {
+        $.each(fieldList, function (i, field) {
             var action;
             if (role == 'instructor')
                 action = field.Editor;
             else if (role == 'student')
-                action == field.Student;
+                action = field.Student;
             else {
                 console.log('createEditor failed with role =', role);
                 return null;
@@ -180,7 +180,7 @@
         if (role == 'instructor')
             action = field.Editor;
         else if (role == 'student')
-            action == field.Student;
+            action = field.Student;
         else {
             console.log('createEditorField failed with role =', role);
             return null;
@@ -325,19 +325,12 @@
 
         $('#loggedin').hide();
         $('#notloggedin').show();
-
-        // set up the nav bar to only show the account tab
-        $('ul.nav > li').first().tab('show').siblings().hide();
-        $('ul.nav > li > a').first().click();
     };
 
     var setupLoggedIn = function () {
         $('#loggedin').show();
         $('#loggedin-as').text(CODRILLA.Email);
         $('#notloggedin').hide();
-
-        // hide everything except the account tab
-        $('ul.nav > li').first().tab('show').siblings().hide();
 
         if (CODRILLA.Role == 'student')
             setupStudent();
@@ -348,9 +341,156 @@
     };
 
     var setupStudent = function () {
-        $('a[data-toggle="tab"][href="#tab-overview"]').tab('show').parent().show();
-        $('a[data-toggle="tab"][href="#tab-assignments"]').parent().show();
+		$('#tabs').tabs('option', 'disabled', [1, 2, 3]);
+		$.getJSON('/student/courses', function (info) {
+			var $div = $('#tab-student-schedule');
+			$div
+				.empty()
+				.append('<h2>Courses and assignments</h2>');
+			if (!info.Courses || info.Courses.length == 0) {
+				$div.append('<p>You are not enrolled in any active courses</p>');
+				return;
+			}
+			$.each(info.Courses, function (i, course) {
+				if (!course.OpenAssignments) course.OpenAssignments = [];
+				var $link = $('<a href="#" class="courselink" />');
+				$link.data('course', course);
+				$link.text(course.Name);
+				$('<h3 />').append($link).appendTo($div);
+				if (course.OpenAssignments.length == 0 && !course.NextAssignment) {
+					$div.append('<p>No future assignments on the schedule yet</p>');
+					return;
+				}
+				var $list = $('<ul />').appendTo($div);
+				$.each(course.OpenAssignments, function (i, asst) {
+					var $item = $('<li />');
+					var text = 'Open assignment: “' + asst.Name + '”';
+					var $link = $('<a href="#" class="asstlink" />');
+					$link.data('assignmentID', asst.ID);
+					$link.text(text);
+					$('<p />').append($('<b />').append($link)).appendTo($item);
+					$item.append($('<p />').text('Due ' + new Date(1000 * asst.Close)));
+					if (asst.ToBeGraded > 0) {
+						$item.append($('<p />').text('You have ' +
+							asst.ToBeGraded + ' submission' + (asst.ToBeGraded == 1 ? '' : 's') +
+							' waiting to be graded'));
+					} else if (asst.Attempts == 0) {
+						$item.append($('<p />').text('You have not submitted a solution yet'));
+					} else if (asst.Passed) {
+						$item.append($('<p />').text('PASSED (total of ' +
+							asst.Attempts + ' attempt' + (asst.Attempts == 1 ? '' : 's') + ')'));
+					} else {
+						$item.append($('<p />').text('You have made ' +
+							asst.Attempts + ' attempt' + (asst.Attempts == 1 ? '' : 's') +
+							' so far, but you have not passed yet'));
+					}
+					if (!asst.ForCredit) {
+						$item.append($('<p />').text('(note: this assignment does not count ' +
+							'toward your grade)'));
+					}
+					$item.appendTo($list);
+				});
+				if (course.NextAssignment) {
+					var $item = $('<li />').appendTo($list);
+					$item.append($('<p />').append($('<b />').text('Next upcoming assignment: “' +
+						course.NextAssignment.Name + '”')));
+					$item.append($('<p />').text('Opens ' +
+						new Date(1000 * course.NextAssignment.Open)));
+					$item.append($('<p />').text('Due ' +
+						new Date(1000 * course.NextAssignment.Close)));
+				}
+			});
+			$('#tabs').tabs('enable', 1).tabs('option', 'active', 1);
+		});
     };
+	$('.courselink').live('click', function () {
+		// load a grade report for this course
+		var course = $(this).data('course');
+		$.getJSON('/student/grades/' + course.Tag, function (grades) {
+			var now = new Date().getTime() / 1000.0;
+			var $div = $('#tab-student-grades').empty();
+			$('<h2 />').text('Grade report for: ' + course.Name).appendTo($div);
+			var $list = $('<ul />').appendTo($div);
+			var passed = 0, failed = 0, pending = 0;
+			$.each(grades, function (i, asst) {
+				if (!asst.ForCredit)
+					return;
+				var $item = $('<li />').appendTo($list);
+				if (asst.Passed) {
+					$item.addClass('green');
+					passed++;
+				} else if (!asst.Active) {
+					$item.addClass('red');
+					failed++;
+				} else {
+					pending++;
+				}
+				var text = (asst.Active ? 'Open' : 'Past') +
+					' assignment: “' + asst.Name + '”';
+				$('<p />').append($('<b />').text(text)).appendTo($item);
+
+				$item.append($('<p />').text('Due ' + new Date(1000 * asst.Close)));
+				if (asst.ToBeGraded > 0) {
+					$item.append($('<p />').text('You have ' +
+						asst.ToBeGraded + ' submission' + (asst.ToBeGraded == 1 ? '' : 's') +
+						' waiting to be graded'));
+				} else if (asst.Attempts == 0) {
+					if (asst.Active)
+						$item.append($('<p />').text('You have not submitted a solution yet'));
+					else
+						$item.append($('<p />').text('FAILED: You did not submit a solution'));
+				} else if (asst.Passed) {
+					$item.append($('<p />').text('PASSED: Total of ' +
+						asst.Attempts + ' attempt' + (asst.Attempts == 1 ? '' : 's') + ')'));
+				} else {
+					if (asst.Active) {
+						$item.append($('<p />').text('You have made ' +
+							asst.Attempts + ' attempt' + (asst.Attempts == 1 ? '' : 's') +
+							' so far, but you have not passed yet'));
+					} else {
+						$item.append($('<p />').text('FAILED: Total of ' +
+							asst.Attempts + ' attempt' + (asst.Attempts == 1 ? '' : 's') + ')'));
+					}
+				}
+			});
+
+			var total = passed + failed;
+			var text = 'Total: ';
+			text += passed + ' passed';
+			if (total > 0)
+				text += ' (' + 100.0*passed/total + '%)';
+			text += ', ' + failed + ' failed, ';
+			if (total > 0)
+				text += ' (' + 100.0*failed/total + '%)';
+			text += ', ' + pending + ' still open';
+			$('<p />').append($('<b />').text(text)).appendTo($div);
+
+			$('#tabs').tabs('enable', 3).tabs('option', 'active', 3);
+		});
+
+		return false;
+	});
+	$('.asstlink').live('click', function () {
+		// load the assignment
+		var asstID = $(this).data('assignmentID');
+		$.getJSON('/student/assignment/' + asstID, function (asst) {
+			var $div = $('#tab-student-assignment').empty();
+			$('<h2 />').text('Assignment ' + asst.Assignment.Name).appendTo($div);
+			var contents = {};
+			$.each(asst.ProblemData || {}, function (key, value) {
+				contents[key] = value;
+			});
+			$.each(asst.Attempt || {}, function (key, value) {
+				contents[key] = value;
+			});
+			var $editor = createEditor(asst.ProblemType.FieldList, contents, 'student');
+			$div.append($editor);
+
+			$('#tabs').tabs('enable', 2).tabs('option', 'active', 2);
+		});
+
+		return false;
+	});
 
     var setupInstructor = function () {
         $('a[data-toggle="tab"][href="#tab-overview"]').tab('show').parent().show();
@@ -376,10 +516,7 @@
         });
     };
 
-    var setupAdmin = function () {
-        $('a[data-toggle="tab"][href="#tab-create-course"]').parent().show();
-    };
-
+	$('#tabs').tabs();
     if (CODRILLA.LoggedIn) {
         setupLoggedIn();
     } else {

@@ -12,7 +12,7 @@ local courseTag = ARGV[2]
 local getAssignmentListingGeneric = function(assignment)
 	local result = {}
 	local problem = redis.call('get', 'assignment:'..assignment..':problem')
-	if problem == '' then
+	if not problem or problem == '' then
 		error('getAssignmentListingGeneric: assignment '..assignment..' mapped to blank problem ID')
 	end
 
@@ -20,6 +20,10 @@ local getAssignmentListingGeneric = function(assignment)
 	result.ID = tonumber(assignment)
 	result.Open = tonumber(redis.call('get', 'assignment:'..assignment..':open'))
 	result.Close = tonumber(redis.call('get', 'assignment:'..assignment..':close'))
+	result.Active = true
+	if redis.call('sismember', 'index:assignments:past', assignment) == 1 then
+		result.Active = false
+	end
 	result.ForCredit = redis.call('get', 'assignment:'..assignment..':forcredit') == 'true'
 
 	return result

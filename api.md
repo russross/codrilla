@@ -15,6 +15,7 @@ Students
     Each course contains:
 
     *   Name: the name of the course
+    *   Tag: the course tag
     *   Close: timestamp when the course ends
     *   Instructors: list of instructor emails for this course
     *   OpenAssignments: list of open assignments for this course,
@@ -28,6 +29,7 @@ Students
     *   ID: the ID# of the assignment
     *   Open: timestamp when the problem opens
     *   Close: timestamp when the problem closes
+    *   Active: true if the assignment is currently open
     *   ForCredit: false if this assignment is not required
 
     For active assignments, the listing also contains the following:
@@ -59,9 +61,13 @@ Students
         generic and student-specific data
     *   CourseName: name of the course
     *   CourseTag: tag for the course
-    *   Type: problem type tag
-    *   FieldList: list of fields for the problem type
-    *   Problem: contents of the problem
+	*   ProblemType: a problem type object:
+
+		*   Name: name of the problem type
+		*   Tag: problem type tag
+		*   FieldList: list of fields for the problem type
+
+    *   ProblemData: contents of the problem
     *   Attempt: the student's most recent attempt (if applicable)
     *   Passed: true if the student has passed this problem
 

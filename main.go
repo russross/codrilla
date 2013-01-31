@@ -28,11 +28,11 @@ type Config struct {
 	BrowserIDVerifyURL string
 	BrowserIDAudience  string
 
-	GoogleVerifyURL string
-	GoogleGetEmailURL string
-	GoogleClientID string
+	GoogleVerifyURL    string
+	GoogleGetEmailURL  string
+	GoogleClientID     string
 	GoogleClientSecret string
-	GoogleRedirectURI string
+	GoogleRedirectURI  string
 
 	StudentEmailDomain string
 }

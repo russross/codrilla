@@ -240,27 +240,27 @@ func browserid_verify(assertion string) (email string, err error) {
 
 type GoogleOAuth20VerificationResponse struct {
 	AccessToken string `json:"access_token"`
-	ExpiresIn int64 `json:"expires_in"`
-	TokenType string `json:"token_type"`
+	ExpiresIn   int64  `json:"expires_in"`
+	TokenType   string `json:"token_type"`
 }
 
 type GoogleUserinfoResponse struct {
-	ID string `json:"id"`
-	Email string `json:"email"`
-	VerifiedEmail bool `json:"verified_email"`
+	ID            string `json:"id"`
+	Email         string `json:"email"`
+	VerifiedEmail bool   `json:"verified_email"`
 }
 
 func google_verify(code string) (email string, err error) {
 	// try to verify the code with Google server
 	resp, err := http.PostForm(
-			config.GoogleVerifyURL,
-			url.Values{
-		"code": {code},
-		"client_id": {config.GoogleClientID},
-		"client_secret": {config.GoogleClientSecret},
-		"redirect_uri": {config.GoogleRedirectURI},
-		"grant_type": {"authorization_code"},
-	})
+		config.GoogleVerifyURL,
+		url.Values{
+			"code":          {code},
+			"client_id":     {config.GoogleClientID},
+			"client_secret": {config.GoogleClientSecret},
+			"redirect_uri":  {config.GoogleRedirectURI},
+			"grant_type":    {"authorization_code"},
+		})
 
 	if err != nil {
 		log.Printf("Failure contacting Google OAuth2.0 verification server: %v", err)
@@ -298,7 +298,7 @@ func google_verify(code string) (email string, err error) {
 		log.Printf("Error creating request object to get email address: %v", err)
 		return "", fmt.Errorf("Error creating request to get email address")
 	}
-	req.Header.Set("Authorization", "OAuth " + verify.AccessToken)
+	req.Header.Set("Authorization", "OAuth "+verify.AccessToken)
 	if resp, err = client.Do(req); err != nil {
 		log.Printf("Request to get email address failed: %v", err)
 		return "", fmt.Errorf("Request to get email address failed")

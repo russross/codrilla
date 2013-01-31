@@ -64,7 +64,7 @@ var Python27InputOutputDescription = &ProblemType{
 			Type:    "markdown",
 			Editor:  "edit",
 			Student: "view",
-			Result: "view",
+			Result:  "view",
 		},
 		{
 			Name:    "Reference",
@@ -73,17 +73,7 @@ var Python27InputOutputDescription = &ProblemType{
 			Type:    "python",
 			Editor:  "edit",
 			Student: "nothing",
-			Result: "nothing",
-		},
-		{
-			Name:    "Tests",
-			Prompt:  "Test cases",
-			Title:   "Test cases",
-			Type:    "text",
-			List:    true,
-			Editor:  "edit",
-			Student: "view",
-			Result: "view",
+			Result:  "nothing",
 		},
 		{
 			Name:    "Candidate",
@@ -92,6 +82,16 @@ var Python27InputOutputDescription = &ProblemType{
 			Type:    "python",
 			Editor:  "nothing",
 			Student: "edit",
+		},
+		{
+			Name:    "Tests",
+			Prompt:  "Test cases",
+			Title:   "Data that will provided on standard in when the program is executed",
+			Type:    "text",
+			List:    true,
+			Editor:  "edit",
+			Student: "view",
+			Result:  "view",
 		},
 		{
 			Name:    "MaxSeconds",
@@ -122,7 +122,7 @@ var Python27InputOutputDescription = &ProblemType{
 			Result:  "view",
 		},
 		{
-			Name: "Passed",
+			Name:    "Passed",
 			Prompt:  "Did the solution pass?",
 			Title:   "Did the solution pass?",
 			Type:    "bool",
@@ -154,6 +154,14 @@ var Python27ExpressionDescription = &ProblemType{
 			Student: "nothing",
 		},
 		{
+			Name:    "Candidate",
+			Prompt:  "Enter your solution here",
+			Title:   "Student solution",
+			Type:    "python",
+			Editor:  "nothing",
+			Student: "edit",
+		},
+		{
 			Name:    "Tests",
 			Prompt:  "Test cases",
 			Title:   "Test cases",
@@ -161,14 +169,6 @@ var Python27ExpressionDescription = &ProblemType{
 			List:    true,
 			Editor:  "edit",
 			Student: "view",
-		},
-		{
-			Name:    "Candidate",
-			Prompt:  "Enter your solution here",
-			Title:   "Student solution",
-			Type:    "python",
-			Editor:  "nothing",
-			Student: "edit",
 		},
 		{
 			Name:    "MaxSeconds",

@@ -12,6 +12,7 @@ local getCourseListing = function(course)
 
 	-- get the course info
 	result.Name = redis.call('get', 'course:'..course..':name')
+	result.Tag = course
 	result.Close = tonumber(redis.call('get', 'course:'..course..':close'))
 	result.Instructors = redis.call('smembers', 'course:'..course..':instructors')
 	table.sort(result.Instructors)
@@ -30,6 +31,10 @@ local getAssignmentListingGeneric = function(assignment)
 	result.ID = tonumber(assignment)
 	result.Open = tonumber(redis.call('get', 'assignment:'..assignment..':open'))
 	result.Close = tonumber(redis.call('get', 'assignment:'..assignment..':close'))
+	result.Active = true
+	if redis.call('sismember', 'index:assignments:past', assignment) == 1 then
+		result.Active = false
+	end
 	result.ForCredit = redis.call('get', 'assignment:'..assignment..':forcredit') == 'true'
 
 	return result
@@ -92,7 +97,7 @@ local main = function (email)
 		if #future == 0 then
 			course.NextAssignment = nil
 		else
-			course.NextAssignment = getAssignmentListingGeneric(future[0])
+			course.NextAssignment = getAssignmentListingGeneric(future[1])
 		end
 
 		-- add this course to the list
