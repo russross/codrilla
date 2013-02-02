@@ -4,3 +4,6 @@ li.green {
 li.red {
   color: red;
 }
+.ui-tabs .ui-state-disabled { 
+  display: none;
+}

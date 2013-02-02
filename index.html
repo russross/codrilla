@@ -4,10 +4,10 @@
     <meta charset="utf-8">
     <title>Codrilla</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description" content="Codrilla code drill site for CS 1410">
+    <meta name="description" content="Codrilla code drill app">
     <meta name="author" content="Russ Ross">
 
-    <link href="//netdna.bootstrapcdn.com/twitter-bootstrap/2.2.2/css/bootstrap-combined.min.css" rel="stylesheet">
+    <link href="//code.jquery.com/ui/1.10.0/themes/base/jquery-ui.css" rel="stylesheet" />
     <link href="/css/codemirror.css" rel="stylesheet">
     <link href="/css/codrilla.css" rel="stylesheet">
 
@@ -16,9 +16,8 @@
       <script src="http://html5shim.googlecode.com/svn/trunk/html5.js"></script>
     <![endif]-->
 
-    <script src="//login.persona.org/include.js"></script>
     <script src="//code.jquery.com/jquery-1.8.3.min.js"></script>
-    <script src="//netdna.bootstrapcdn.com/twitter-bootstrap/2.2.2/js/bootstrap.min.js"></script>
+    <script src="//ajax.googleapis.com/ajax/libs/jqueryui/1.10.0/jquery-ui.min.js"></script>
     <script src="/js/jquery-cookie.js"></script>
     <script src="/js/marked.js"></script>
     <script src="/js/codemirror.js"></script>
@@ -28,87 +27,76 @@
   </head>
 
   <body>
+    <h1>Codrilla</h1>
 
-    <div class="tabbable">
-      <ul class="nav nav-pills">
-        <li class="active"><a href="#tab-account" data-toggle="tab">Account</a></li>
-        <li><a href="#tab-overview" data-toggle="tab">Overview</a></li>
-        <li><a href="#tab-assignments" data-toggle="tab">Assignments</a></li>
-        <li><a href="#tab-update-course-roll" data-toggle="tab">Update course roll</a></li>
-        <li><a href="#tab-create-course" data-toggle="tab">Create course</a></li>
-        <li><a href="#tab-create-problem" data-toggle="tab">Create problem</a></li>
+    <div id="tabs">
+      <ul>
+        <li><a href="#tab-account">Account</a></li>
+
+        <li><a href="#tab-student-schedule">Schedule</a></li>
+        <li><a href="#tab-student-assignment">Assignment</a></li>
+        <li><a href="#tab-student-result">Result</a></li>
+        <li><a href="#tab-student-grades">Grades</a></li>
+
+        <li><a href="#tab-instructor-schedule">Schedule</a></li>
+        <li><a href="#tab-instructor-newproblem">New Problem</a></li>
+        <li><a href="#tab-instructor-newassignment">New Assignment</a></li>
+        <li><a href="#tab-instructor-grades">Grades</a></li>
+        <li><a href="#tab-instructor-setup">Setup</a></li>
       </ul>
 
-      <div class="tab-content">
-        <div class="tab-pane active" id="tab-account">
-          <div id="notloggedin">
-            <h2>Please sign in</h2>
-            <p><a id="persona-login-button" href="#"><img src="img/persona_sign_in_black.png"></a></p>
-          </div>
-          <div id="loggedin">
-            <h2>You are logged in as <span id="loggedin-as"></span></h2>
-            <p><a id="logout-button" href="#"><span class="btn btn-primary btn-large">Logout</span></a></p>
-          </div>
-        </div>
 
-        <div class="tab-pane" id="tab-overview">
+      <div id="tab-account">
+        <div id="notloggedin">
+          <h2>Please sign in</h2>
+          <p><a id="google-login-button" href="#">Login using your Dmail account</a></p>
         </div>
-
-        <div class="tab-pane" id="tab-assignments">
-        </div>
-
-        <div class="tab-pane" id="tab-setup">
-          <h1>Upload a class list from Canvas</h1>
-          <form method="post" id="uploadcsvform" action="/instructor/update/courselist" enctype="multipart/form-data">
-          <p>
-            <input type="file" id="CSVFile" name="CSVFile">
-            <a id="uploadcsvbutton" href="#"><span class="btn btn-primary btn-large">Upload</span></a>
-          </p>
-          </form>
-        </div>
-
-        <div class="tab-pane" id="tab-create-course">
-          <h1>Create a new course</h1>
-          <form id="createcourseform">
-            <fieldset>
-              <legend>Create a new course</legend>
-              <div class="control-group">
-                <label class="control-label" for="CourseName">Course name (e.g.: CS 1410: Object Oriented Programming)</label>
-                <div class="controls">
-                  <input id="CourseName" name="CourseName" size="80" type="text" value="" />
-                </div>
-              </div>
-              <div class="control-group">
-                <label class="control-label" for="CourseTag">Course tag (e.g.: cs1410-s13-8am)</label>
-                <div class="controls">
-                  <input id="CourseTag" name="CourseTag" size="80" type="text" value="" />
-                </div>
-              </div>
-              <div class="control-group">
-                <label class="control-label" for="Instructor">Instructor email</label>
-                <div class="controls">
-                  <input id="Instructor" name="Instructor" size="80" type="text" value="" />
-                </div>
-              </div>
-              <div class="control-group">
-                <label class="control-label" for="EndDate">Course end date (after grades are due)</label>
-                <div class="controls">
-                  <input id="EndDate" name="EndDate" size="80" type="text" value="" />
-                </div>
-              </div>
-            </fieldset>
-          </form>
-        </div>
-
-        <div class="tab-pane" id="tab-create-problem">
-          <h1>Create a new problem</h1>
-          <form id="newproblemform">
-            <select name="problemtype" id="problemtype">
-            </select>
-            <div id="newproblemspace"></div>
-          </form>
+        <div id="loggedin">
+          <h2>You are logged in as <span id="loggedin-as"></span></h2>
+          <p><a id="logout-button" href="#">Logout</a></p>
         </div>
       </div>
+
+
+      <div id="tab-student-schedule">
+        <h2>Your courses and assignments should be listed here</h2>
+        <p>If you can see this, there is probably an error preventing your
+           course information from loading.</p>
+      </div>
+      <div id="tab-student-assignment">
+        <h2>The assignment you are working on goes here</h2>
+        <p>You must select an assignment from the Schedule tab
+           before you can do anything here.</p>
+      </div>
+      <div id="tab-student-result">
+        <h2>A graded assignment goes here</h2>
+        <p>You must select an assignment from the Schedule or Grade tabs
+           before you can do anything here.</p>
+      </div>
+      <div id="tab-student-grades">
+        <h2>Your grade report for a course goes here</h2>
+        <p>You must select a course from the Schedule tab
+           before you will see anything here.</p>
+      </div>
+
+
+	  <div id="tab-instructor-schedule">
+		<h2>This is where you view the assignment schedule</h2>
+	  </div>
+	  <div id="tab-instructor-newproblem">
+		<h2>This is where you create new problems</h2>
+	  </div>
+	  <div id="tab-instructor-newassignment">
+		<h2>This is where you create new assignments</h2>
+	  </div>
+	  <div id="tab-instructor-grades">
+		<h2>This is where you view student grades</h2>
+	  </div>
+	  <div id="tab-instructor-setup">
+		<h2>This is where you set up courses</h2>
+	  </div>
+    </div>
+
 
   </body>
 </html>

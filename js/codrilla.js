@@ -118,11 +118,11 @@
 
         $('#loggedin').hide();
         $('#notloggedin').show();
-        $('#tabs').tabs('option', 'disabled', [1, 2, 3, 4]);
+        $('#tabs').tabs('option', 'disabled', [1, 2, 3, 4, 5, 6, 7, 8, 9]);
     };
 
     var setupStudent = function () {
-        $('#tabs').tabs('option', 'disabled', [1, 2, 3, 4]);
+        $('#tabs').tabs('option', 'disabled', [1, 2, 3, 4, 5, 6, 7, 8, 9]);
         refreshStudentSchedule(true);
     };
 

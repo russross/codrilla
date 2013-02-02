@@ -78,7 +78,7 @@ func main() {
 			http.Error(w, "Not found", http.StatusNotFound)
 			return
 		}
-		http.ServeFile(w, r, "student.html")
+		http.ServeFile(w, r, "index.html")
 	})
 
 	// connect to database
