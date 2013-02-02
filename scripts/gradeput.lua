@@ -32,7 +32,7 @@ redis.call('set', 'solution:'..solutionID..':passed', passed)
 
 -- is that the last submission for this solution?
 if precount <= postcount+1 then
-	redis.call('srem', 'queue:solution:waiting', solutionID)
+	redis.call('srem', 'solution:queue', solutionID)
 end
 
 return ''

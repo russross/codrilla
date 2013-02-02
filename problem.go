@@ -80,7 +80,7 @@ func setupProblemTypes(db *redis.Client) {
 		log.Fatalf("List of problem types from %s is empty", u.String())
 	}
 
-	if i := db.Del("grader:problemtypes"); i.Err() != nil {
+	if i := db.Del("problem:types"); i.Err() != nil {
 		log.Fatalf("DB error deleting problem type hash: %v", i.Err())
 	}
 
@@ -90,7 +90,7 @@ func setupProblemTypes(db *redis.Client) {
 		if err != nil {
 			log.Fatalf("Error re-encoding problem type description for %s: %v", elt.Tag, err)
 		}
-		if b := db.HSet("grader:problemtypes", elt.Tag, string(raw)); b.Err() != nil {
+		if b := db.HSet("problem:types", elt.Tag, string(raw)); b.Err() != nil {
 			log.Fatalf("DB error adding %s problem type: %v", elt.Tag, b.Err())
 		}
 	}
@@ -98,7 +98,7 @@ func setupProblemTypes(db *redis.Client) {
 
 func problem_types(w http.ResponseWriter, r *http.Request, db *redis.Client, session *sessions.Session) {
 	// get the list of types from the database
-	slice := db.HGetAll("grader:problemtypes")
+	slice := db.HGetAll("problem:types")
 	if slice.Err() != nil {
 		log.Printf("DB error getting list of problem types: %v", slice.Err())
 		http.Error(w, "DB error", http.StatusInternalServerError)
@@ -128,7 +128,7 @@ func problem_type(w http.ResponseWriter, r *http.Request, db *redis.Client, sess
 	tag := r.URL.Query().Get(":tag")
 
 	// get the field list in JSON form
-	str := db.HGet("grader:problemtypes", tag)
+	str := db.HGet("problem:types", tag)
 	if str.Err() != nil {
 		log.Printf("DB error getting type description for %s: %v", tag, str.Err())
 		http.Error(w, "DB error", http.StatusInternalServerError)
@@ -220,7 +220,7 @@ func problem_save_common(w http.ResponseWriter, r *http.Request, db *redis.Clien
 	}
 
 	// must be a recognized problem type
-	str := db.HGet("grader:problemtypes", problem.Type)
+	str := db.HGet("problem:types", problem.Type)
 	if str.Err() != nil {
 		log.Printf("DB error getting type description for %s: %v", problem.Type, str.Err())
 		http.Error(w, "DB error", http.StatusInternalServerError)

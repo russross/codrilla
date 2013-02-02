@@ -91,7 +91,10 @@ func main() {
 	// load lua scripts
 	loadScripts(pool, scriptPath)
 
-	// TODO: catch up on grading
+	// start grader
+	notifyGrader = make(chan bool, 10)
+	go gradeDaemon()
+	notifyGrader <- true
 
 	log.Printf("Listening on %s", config.Address)
 	if err = http.ListenAndServe(config.Address, nil); err != nil {

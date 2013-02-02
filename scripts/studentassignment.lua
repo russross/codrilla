@@ -72,10 +72,10 @@ result.CourseName = redis.call('get', 'course:'..course..':name')
 result.CourseTag = course
 local problemtypetag = redis.call('get', 'problem:'..problem..':type')
 
-if redis.call('hexists', 'grader:problemtypes', problemtypetag) == 0 then
+if redis.call('hexists', 'problem:types', problemtypetag) == 0 then
 	error('Problem is of unknown type: '..problemtypetag)
 end
-result.ProblemType = cjson.decode(redis.call('hget', 'grader:problemtypes', problemtypetag))
+result.ProblemType = cjson.decode(redis.call('hget', 'problem:types', problemtypetag))
 
 -- WARNING: this is the raw problem; it must be filtered against
 -- the fieldlist before being handed to the student

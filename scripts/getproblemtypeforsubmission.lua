@@ -33,6 +33,6 @@ end
 -- everything checks out, get the problem type description
 local problemID = redis.call('get', 'assignment:'..asstID..':problem')
 local problemTypeTag = redis.call('get', 'problem:'..problemID..':type')
-local problemType = redis.call('hget', 'grader:problemtypes', problemTypeTag)
+local problemType = redis.call('hget', 'problem:types', problemTypeTag)
 
 return problemType

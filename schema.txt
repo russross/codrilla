@@ -10,6 +10,7 @@ problem:123:tags - set of tags (lower case)
 problem:123:data - JSON encoding of all problem data
 problem:123:usedby - set of courses using this problem
 problem:counter - id generator counter
+problem:types - hash of grading tags to problem type encoded in JSON
 index:problems:all - set of all problems
 
 index:administrators - set of administrative users
@@ -57,10 +58,8 @@ solution:345:submissions - list of JSON-encoded unevaluated submissions
 solution:345:graded - list of JSON-encoded submissions after grading
 solution:345:passed - true if most recent attempt was successful
 solution:counter - id generator counter
+solution:queue - set of solution IDs with submissions waiting to be graded
 
-grader:problemtypes - hash of grading tags to field lists encoded in JSON
-
-queue:solution:waiting - set of solution IDs that need to be evaluated
 
 
 To create an administrator

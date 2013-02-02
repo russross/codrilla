@@ -19,7 +19,7 @@ if #problem.Tags == 0 then
 end
 
 -- make sure the type is recognized
-if redis.call('hexists', 'grader:problemtypes', problem.Type) == 0 then
+if redis.call('hexists', 'problem:types', problem.Type) == 0 then
 	error('saveproblem: unrecognized problem type')
 end
 

@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"time"
 )
 
 type GradeItem struct {
@@ -16,6 +17,52 @@ type GradeItem struct {
 	ProblemType *ProblemType
 	ProblemData map[string]interface{}
 	Attempt     map[string]interface{}
+}
+
+var notifyGrader chan bool
+
+func gradeDaemon() {
+	delay := time.Second
+	retry := false
+	for {
+		if !retry {
+			<-notifyGrader
+		}
+
+		// clear out the channel
+		clearLoop:
+		for {
+			select {
+			case <-notifyGrader:
+			default:
+				break clearLoop
+			}
+		}
+
+		err := gradeAll(pool)
+		if err != nil {
+			log.Printf("gradeDaemon err: sleeping for %v", delay)
+			time.Sleep(delay)
+
+			delay *= 2
+			if delay > time.Minute {
+				delay = time.Minute
+			}
+
+			retry = true
+		} else {
+			delay = time.Second
+			retry = false
+		}
+	}
+}
+
+func gradeAll(db *redis.Client) (err error) {
+	didwork := true
+	for didwork && err == nil {
+		didwork, err = gradeOne(db)
+	}
+	return
 }
 
 func gradeOne(db *redis.Client) (bool, error) {

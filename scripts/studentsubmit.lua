@@ -50,12 +50,7 @@ end
 -- store this submission
 redis.call('rpush', 'solution:'..solID..':submissions', data)
 
--- trigger the grader, unless this solution already has a submission in progress
-if redis.call('sismember', 'queue:solution:processing', solID) == 0 then
-	redis.call('sadd', 'queue:solution:waiting', solID)
-
-	-- notify the grader that there is work to do
-	redis.call('publish', 'grader', 'new')
-end
+-- trigger the grader
+redis.call('sadd', 'solution:queue', solID)
 
 return ''
