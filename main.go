@@ -17,6 +17,7 @@ import (
 )
 
 type Config struct {
+	Address              string
 	TimeZoneName         string
 	SessionSecret        string
 	CompressionThreshold int
@@ -85,7 +86,10 @@ func main() {
 	setupProblemTypes(pool)
 	restoreQueue(pool)
 
-	log.Fatal(http.ListenAndServe(":8080", nil))
+	log.Printf("Listening on %s", config.Address)
+	if err = http.ListenAndServe(config.Address, nil); err != nil {
+		log.Fatal(err)
+	}
 }
 
 func restoreQueue(db *redis.Client) {

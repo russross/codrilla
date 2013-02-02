@@ -57,17 +57,17 @@ Students
     Returns data about the given assignment, and the student's most
     recent attempt (if applicable):
 
-    *   Assignment: assignment listing as in list/courses, with
-        generic and student-specific data
     *   CourseName: name of the course
     *   CourseTag: tag for the course
-	*   ProblemType: a problem type object:
+    *   ProblemType: a problem type object:
 
-		*   Name: name of the problem type
-		*   Tag: problem type tag
-		*   FieldList: list of fields for the problem type
+        *   Name: name of the problem type
+        *   Tag: problem type tag
+        *   FieldList: list of fields for the problem type
 
     *   ProblemData: contents of the problem
+    *   Assignment: assignment listing as in list/courses, with
+        generic and student-specific data
     *   Attempt: the student's most recent attempt (if applicable)
     *   Passed: true if the student has passed this problem
 
@@ -82,6 +82,23 @@ Students
 
     The request includes a JSON payload with the student's
     attempt.
+
+*   Get submission feedback
+
+        GET /student/result/ID#/N
+
+    Retrieves a submission result for assignement ID#. Retrieves
+    attempt number N. If N is -1, it retrieves the most recent
+    attempt. 
+
+	This returns the same data as /student/assignement, with the
+	"Passed" field removed and an additional field added:
+
+	*   ResultData: contents of the report from the grader. This is
+		empty or missing if the attempt has not been graded yet.
+
+	The "Attempt" field is also the attempt requested, not
+	necessarily the most recent attempt.
 
 
 Courses

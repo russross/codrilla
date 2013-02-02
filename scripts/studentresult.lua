@@ -1,13 +1,17 @@
--- called with email asstID
+-- called with email asstID N
 
 if not ARGV[1] or ARGV[1] == '' then
-	error('studentassignment: missing email address')
+	error('missing email address')
 end
 local email = ARGV[1]
 if not ARGV[2] or ARGV[2] == '' then
-	error('studentassignment: missing assignment ID')
+	error('missing assignment ID')
 end
 local asstID = ARGV[2]
+if not ARGV[3] or ARGV[3] == '' then
+	error('missing attempt number')
+end
+local n = tonumber(ARGV[3])
 
 local getAssignmentListingGeneric = function(assignment)
 	local result = {}
@@ -47,7 +51,7 @@ end
 -- get the course
 local course = redis.call('get', 'assignment:'..asstID..':course')
 if not course or course == '' then
-	error('studentassignment: no such assignment')
+	error('no such assignment')
 end
 
 -- make sure this is an active course and the student is enrolled
@@ -58,9 +62,12 @@ if redis.call('sismember', 'course:'..course..':students', email) == 0 then
 	error(email..' is not enrolled in '..course)
 end
 
--- make sure this is an active assignment
+-- make sure this is an active or past assignment
 if redis.call('sismember', 'course:'..course..':assignments:active', asstID) == 0 then
-	error(asstID..' is not an active assignment')
+	if redis.call('sismember', 'course:'..course..':assignments:past', asstID) == 0 then
+
+		error(asstID..' is not an active/past assignment')
+	end
 end
 
 local problem = redis.call('get', 'assignment:'..asstID..':problem')
@@ -73,7 +80,7 @@ result.CourseTag = course
 local problemtypetag = redis.call('get', 'problem:'..problem..':type')
 
 if redis.call('hexists', 'grader:problemtypes', problemtypetag) == 0 then
-	error('Problem is of unknown type: '..problemtypetag)
+	error('Problem '..problem..' is of unknown type: '..problemtypetag)
 end
 result.ProblemType = cjson.decode(redis.call('hget', 'grader:problemtypes', problemtypetag))
 
@@ -86,11 +93,23 @@ result.Passed = false
 
 -- see if the student has an attempt
 local solution = redis.call('hget', 'student:'..email..':solutions:'..course, asstID)
-if solution and tonumber(solution) > 0 then
-	result.Attempt = cjson.decode(redis.call('lindex', 'solution:'..solution..':submissions', -1))
-	if redis.call('get', 'solution:'..solution..':passed') == 1 then
-		result.Passed = 'true'
-	end
+if not solution or tonumber(solution) < 1 then
+	error('404 Not Found')
+end
+local count = tonumber(redis.call('llen', 'solution:'..solution..':submissions'))
+if count == 0 or n < -1 or (n > -1 and n >= count) then
+	error('404 Not Found')
+end
+if n == -1 then n = count - 1 end
+
+result.Attempt = cjson.decode(redis.call('lindex', 'solution:'..solution..':submissions', n))
+if redis.call('get', 'solution:'..solution..':passed') == 1 then
+	result.Passed = 'true'
+end
+
+count = tonumber(redis.call('llen', 'solution:'..solution..':graded'))
+if n < count then
+	result.ResultData = cjson.decode(redis.call('lindex', 'solution:'..solution..':graded', n))
 end
 
 return cjson.encode(result)
