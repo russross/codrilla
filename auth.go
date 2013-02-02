@@ -388,7 +388,7 @@ func checkSession(db *redis.Client, session *sessions.Session) error {
 		}
 		if !reply.Val() {
 			log.Printf("Session says student, but user %s is not on the active student list", email)
-			return fmt.Errorf("Must be logged in as an active student")
+			return fmt.Errorf("Student that is logged in is not active in any courses")
 		}
 
 	default:

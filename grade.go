@@ -30,7 +30,7 @@ func gradeDaemon() {
 		}
 
 		// clear out the channel
-		clearLoop:
+	clearLoop:
 		for {
 			select {
 			case <-notifyGrader:
@@ -112,7 +112,14 @@ func gradeOne(db *redis.Client) (bool, error) {
 		Host:   config.GraderAddress,
 		Path:   "/" + item.ProblemType.Tag,
 	}
-	resp, err := http.Post(u.String(), "application/json", bytes.NewReader(requestBody))
+	request, err := http.NewRequest("POST", u.String(), bytes.NewReader(requestBody))
+	if err != nil {
+		log.Printf("gradeOne: error creating request object: %v", err)
+		return false, err
+	}
+	request.Header.Add("Content-Type", "application/json")
+	request.Header.Add("Accept", "application/json")
+	resp, err := http.DefaultClient.Do(request)
 	if err != nil {
 		log.Printf("gradeOne: error sending request to %s: %v", u.String(), err)
 		return false, err

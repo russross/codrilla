@@ -52,7 +52,7 @@ local getAssignmentListingStudent = function(course, assignment, email, result)
 
 	result.Attempts = tonumber(redis.call('llen', 'solution:'..solution..':submissions'))
 	result.ToBeGraded = result.Attempts - tonumber(redis.call('llen', 'solution:'..solution..':graded'))
-	result.Passed = redis.call('hget', 'student:'..email..':solutions:'..course, assignment) == 'true'
+	result.Passed = redis.call('get', 'solution:'..solution..':passed') == 'true'
 end
 
 local main = function (email)

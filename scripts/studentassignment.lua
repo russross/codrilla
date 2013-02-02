@@ -41,7 +41,7 @@ local getAssignmentListingStudent = function(course, assignment, email, result)
 
 	result.Attempts = tonumber(redis.call('llen', 'solution:'..solution..':submissions'))
 	result.ToBeGraded = result.Attempts - tonumber(redis.call('llen', 'solution:'..solution..':graded'))
-	result.Passed = redis.call('hget', 'student:'..email..':solutions:'..course, assignment) == 'true'
+	result.Passed = redis.call('get', 'solution:'..solution..':passed') == 'true'
 end
 
 -- get the course
@@ -81,15 +81,14 @@ result.ProblemType = cjson.decode(redis.call('hget', 'problem:types', problemtyp
 -- the fieldlist before being handed to the student
 result.ProblemData = cjson.decode(redis.call('get', 'problem:'..problem..':data'))
 
-result.Attempt = ''
 result.Passed = false
 
 -- see if the student has an attempt
 local solution = redis.call('hget', 'student:'..email..':solutions:'..course, asstID)
 if solution and tonumber(solution) > 0 then
 	result.Attempt = cjson.decode(redis.call('lindex', 'solution:'..solution..':submissions', -1))
-	if redis.call('get', 'solution:'..solution..':passed') == 1 then
-		result.Passed = 'true'
+	if redis.call('get', 'solution:'..solution..':passed') == 'true' then
+		result.Passed = true
 	end
 end
 

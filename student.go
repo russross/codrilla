@@ -205,4 +205,5 @@ func student_submit(w http.ResponseWriter, r *http.Request, db *redis.Client, se
 		http.Error(w, "DB error", http.StatusInternalServerError)
 		return
 	}
+	notifyGrader <- true
 }

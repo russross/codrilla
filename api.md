@@ -125,15 +125,12 @@ Courses
     All students enrolled in the course that do not appear in one of
     the CSV files will be dropped from the course.
 
-*   Update some course and student mapping data:
+*   Update and student mapping data:
 
         POST /course/canvasstudentmappings
 
     The contents must be JSON object mapping Canvas student IDs to
     email addresses.
-
-    Once these mappings are updated, the CSV file can be uploaded
-    again to finish updating course membership.
 
 *   Get a list of courses and assignments (instructor)
 
@@ -208,10 +205,14 @@ Problems
         type
     *   Default: optional default value for this field (or list
         element)
-    *   Editor: action to take when presenting this field to a
-        problem editor. One of {view, edit}
+    *   Creator: action to take when presenting this field to a
+        problem editor. One of {view, edit, nothing}
     *   Student: action to take when presenting this field to a
-        student. Same options as for Editor
+        student. Same options as for Creator
+    *   Grader: action to take when presenting this field to a
+        grader. Same options as for Creator
+    *   Result: action to take when presenting this field as a
+        result. Same options as for Creator
 
 *   Get a problem type description (instructor)
 

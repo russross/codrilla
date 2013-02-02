@@ -27,7 +27,7 @@ end
 redis.call('rpush', 'solution:'..solutionID..':graded', resultData)
 
 local passed = 'false'
-if tostring(data.Passed) == 'true' then passed = 'true' end
+if data.Passed then passed = 'true' end
 redis.call('set', 'solution:'..solutionID..':passed', passed)
 
 -- is that the last submission for this solution?
