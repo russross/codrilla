@@ -240,8 +240,12 @@
             // int editor
             var $input = $('<input type="number" step="1" min="1" class="intfield">').val(value || 1);
             $div.append($input);
-        } else if ((field.Type == 'int' || field.Type == 'string') && action == 'view') {
-            // int / string viewer
+        } else if (field.Type == 'bool' && action == 'edit') {
+            // bool editor
+            var $input = $('<input type="checkbox" class="boolfield" value="true">').prop('checked', value == true);
+            $div.append($input);
+        } else if ((field.Type == 'int' || field.Type == 'string' || field.Type == 'bool') && action == 'view') {
+            // int / string / bool viewer
             $('<p />').text(value).appendTo($div);
         } else if (field.Type == 'string' && action == 'edit') {
             // string editor
@@ -282,6 +286,9 @@
         });
         $div.find('.intfield').each(function () {
             result = Number(this.value);
+        });
+        $div.find('.boolfield').each(function () {
+            result = Boolean(this.value);
         });
         return result;
     };
@@ -356,6 +363,11 @@
                 $div.append('<p>You are not enrolled in any active courses</p>');
                 return;
             }
+            info.Courses.sort(function (a, b) {
+                if (a.Name < b.Name) return -1;
+                else if (a.Name > b.Name) return 1;
+                else return 0;
+            });
             $.each(info.Courses, function (i, course) {
                 if (!course.OpenAssignments) course.OpenAssignments = [];
                 var $link = $('<a href="#" class="courselink" />');
@@ -367,43 +379,23 @@
                     return;
                 }
                 var $list = $('<ul />').appendTo($div);
+                course.OpenAssignments.sort(function (a, b) {
+                    if (a.Close < b.Close) return -1;
+                    else if (a.Close > b.Close) return 1;
+                    else return 0;
+                });
                 $.each(course.OpenAssignments, function (i, asst) {
-                    var $item = $('<li />');
-                    var text = 'Open assignment: “' + asst.Name + '”';
-                    var $link = $('<a href="#" class="asstlink" />');
-                    $link.data('assignmentID', asst.ID);
-                    $link.text(text);
-                    $('<p />').append($('<b />').append($link)).appendTo($item);
-                    $item.append($('<p />').text('Due ' + new Date(1000 * asst.Close)));
-                    if (asst.ToBeGraded > 0) {
-                        $item.append($('<p />').text('You have ' +
-                            asst.ToBeGraded + ' submission' + (asst.ToBeGraded == 1 ? '' : 's') +
-                            ' waiting to be graded'));
-                        tobegradedcount++;
-                    } else if (asst.Attempts == 0) {
-                        $item.append($('<p />').text('You have not submitted a solution yet'));
-                    } else if (asst.Passed) {
-                        $item.append($('<p />').text('PASSED (total of ' +
-                            asst.Attempts + ' attempt' + (asst.Attempts == 1 ? '' : 's') + ')'));
-                    } else {
-                        $item.append($('<p />').text('You have made ' +
-                            asst.Attempts + ' attempt' + (asst.Attempts == 1 ? '' : 's') +
-                            ' so far, but you have not passed yet'));
-                    }
-                    if (!asst.ForCredit) {
-                        $item.append($('<p />').text('(note: this assignment does not count ' +
-                            'toward your grade)'));
-                    }
-                    $item.appendTo($list);
+                    $list.append(buildAssignmentListItem(asst));
                 });
                 if (course.NextAssignment) {
                     var $item = $('<li />').appendTo($list);
                     $item.append($('<p />').append($('<b />').text('Next upcoming assignment: “' +
                         course.NextAssignment.Name + '”')));
-                    $item.append($('<p />').text('Opens ' +
-                        new Date(1000 * course.NextAssignment.Open)));
-                    $item.append($('<p />').text('Due ' +
-                        new Date(1000 * course.NextAssignment.Close)));
+                    var $opens = $('<p />').text('Opens ');
+                    formatDate($opens, course.NextAssignment.Open);
+                    var $due = $('<p />').text('Due ');
+                    formatDate($due, course.NextAssignment.Close);
+                    $item.append($due);
                 }
             });
             if (setTab)
@@ -423,57 +415,104 @@
         return false;
     });
 
+    var buildAssignmentListItem = function (asst) {
+        var $item = $('<li />');
+
+        // color the item if appropriate
+        if (asst.Passed)
+            $item.addClass('green');
+        else if (!asst.Active && asst.ToBeGraded == 0)
+            $item.addClass('red');
+
+        // form line (possibly with link) for assignment name
+        var text = (asst.Active ? 'Open' : 'Past') + ' assignment: “' + asst.Name + '”';
+        if (asst.Active) {
+            var $link = $('<a href="#" class="asstlink" />')
+                .data('assignmentID', asst.ID)
+                .text(text);
+            $('<p />').append($('<b />').append($link)).appendTo($item);
+        } else {
+            $('<p />').append($('<b />').text(text)).appendTo($item);
+        }
+
+        // add due date line
+        var $due = $('<p />').text('Due ');
+        formatDate($due, asst.Close);
+        $item.append($due);
+
+        // report on submissions
+        if (asst.ToBeGraded > 0) {
+            $item.append($('<p />').text('You have ' +
+                asst.ToBeGraded + ' submission' + (asst.ToBeGraded == 1 ? '' : 's') +
+                ' waiting to be graded'));
+        } else if (asst.Attempts == 0) {
+            if (asst.Active)
+                $item.append($('<p />').text('You have not submitted a solution yet'));
+            else
+                $item.append($('<p />').text('FAILED: You did not submit a solution'));
+        } else if (asst.Passed) {
+            $item.append($('<p />').text('PASSED: Total of ' +
+                asst.Attempts + ' attempt' + (asst.Attempts == 1 ? '' : 's') + ')'));
+        } else if (asst.Active) {
+            $item.append($('<p />').text('You have made ' +
+                asst.Attempts + ' attempt' + (asst.Attempts == 1 ? '' : 's') +
+                ' so far, but you have not passed yet'));
+        } else {
+            $item.append($('<p />').text('FAILED: Total of ' +
+                asst.Attempts + ' attempt' + (asst.Attempts == 1 ? '' : 's') + ')'));
+        }
+        return $item;
+    };
+
+    var until = function (when) {
+        var now = new Date();
+        var seconds = Math.round((when.getTime() - now.getTime()) / 1000.0);
+        var sign = (seconds < 0 ? '-' : '');
+        seconds = Math.abs(seconds);
+        var d = Math.round(seconds / (24*3600)); seconds -= d * 24*3600;
+        var h = Math.round(seconds / 3600); seconds -= h * 3600;
+        var m = Math.round(seconds / 60); seconds -= m * 60;
+        var s = seconds;
+
+        if (d >= 7)
+            return sign + d + 'd';
+        if (d >= 1)
+            return sign + d + 'd ' + h + 'h';
+        if (h >= 6)
+            return sign + h + 'h';
+        if (h >= 1)
+            return sign + h + 'h ' + m + 'm';
+        if (m >= 10)
+            return sign + m + 'm';
+        if (m >= 1)
+            return sign + m + 'm ' + s + 's';
+        return sign + s + 's';
+    };
+
     var refreshStudentGrade = function (setTab) {
         var course = $('#tab-student-grades').data('course');
         if (!course) return;
         $.getJSON('/student/grades/' + course.Tag, function (grades) {
-            var tobegradedcount = 0;
-            var now = new Date().getTime() / 1000.0;
             var $div = $('#tab-student-grades').empty();
             $('<h2 />').text('Grade report for: ' + course.Name).appendTo($div);
             var $list = $('<ul />').appendTo($div);
-            var passed = 0, failed = 0, pending = 0;
+            var passed = 0, failed = 0, pending = 0, tobegradedcount = 0;
+            grades.sort(function (a, b) {
+                if (a.Close < b.Close) return -1;
+                else if (a.Close > b.Close) return 1;
+                else return 0;
+            });
             $.each(grades, function (i, asst) {
-                if (!asst.ForCredit)
-                    return;
-                var $item = $('<li />').appendTo($list);
-                if (asst.Passed) {
-                    $item.addClass('green');
-                    passed++;
-                } else if (!asst.Active) {
-                    $item.addClass('red');
-                    failed++;
-                } else {
-                    pending++;
-                }
-                var text = (asst.Active ? 'Open' : 'Past') +
-                    ' assignment: “' + asst.Name + '”';
-                $('<p />').append($('<b />').text(text)).appendTo($item);
+                if (!asst.ForCredit) return;
 
-                $item.append($('<p />').text('Due ' + new Date(1000 * asst.Close)));
-                if (asst.ToBeGraded > 0) {
-                    $item.append($('<p />').text('You have ' +
-                        asst.ToBeGraded + ' submission' + (asst.ToBeGraded == 1 ? '' : 's') +
-                        ' waiting to be graded'));
+                if (asst.ToBeGraded > 0)
                     tobegradedcount++;
-                } else if (asst.Attempts == 0) {
-                    if (asst.Active)
-                        $item.append($('<p />').text('You have not submitted a solution yet'));
-                    else
-                        $item.append($('<p />').text('FAILED: You did not submit a solution'));
-                } else if (asst.Passed) {
-                    $item.append($('<p />').text('PASSED: Total of ' +
-                        asst.Attempts + ' attempt' + (asst.Attempts == 1 ? '' : 's') + ')'));
-                } else {
-                    if (asst.Active) {
-                        $item.append($('<p />').text('You have made ' +
-                            asst.Attempts + ' attempt' + (asst.Attempts == 1 ? '' : 's') +
-                            ' so far, but you have not passed yet'));
-                    } else {
-                        $item.append($('<p />').text('FAILED: Total of ' +
-                            asst.Attempts + ' attempt' + (asst.Attempts == 1 ? '' : 's') + ')'));
-                    }
-                }
+
+                if (asst.Passed) passed++;
+                else if (!asst.Active && asst.ToBeGraded == 0) failed++;
+                else pending++;
+
+                $list.append(buildAssignmentListItem(asst));
             });
 
             var total = passed + failed;
@@ -484,7 +523,7 @@
             text += ', ' + failed + ' failed, ';
             if (total > 0)
                 text += ' (' + 100.0*failed/total + '%)';
-            text += ', ' + pending + ' still open';
+            text += ', ' + pending + ' still pending';
             $('<p />').append($('<b />').text(text)).appendTo($div);
 
             if (setTab)
@@ -497,24 +536,59 @@
         });
     };
 
+    var months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    var daysOfWeek = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    var pad = function (n) {
+        if (n < 10) return '0' + n;
+        else return String(n);
+    };
+    var formatDate = function ($container, unix) {
+        var when = new Date(1000 * unix);
+        var now = new Date();
+        var stamp = daysOfWeek[when.getDay()] + ', ' + months[when.getMonth()] + ' ' + when.getDate();
+        if (when.getFullYear() != now.getFullYear())
+            stamp += ', ' + when.getFullYear();
+        stamp += ' ' + when.getHours() + ':' + pad(when.getMinutes());
+        $container.append(stamp + ' (');
+        var $countdown = $('<span class="countdown">' + until(when) + '</span>');
+        $countdown.data('deadline', when);
+        $container.append($countdown).append(')');
+    };
+    window.setInterval(function () {
+        $('.countdown').each(function () {
+            var when = $(this).data('deadline');
+            if (!when) return;
+            $(this).text(until(when));
+        });
+    }, 5000);
+
     $('.asstlink').live('click', function () {
         // load the assignment
         var asstID = $(this).data('assignmentID');
         $.getJSON('/student/assignment/' + asstID, function (asst) {
             console.log(asst);
             var $div = $('#tab-student-assignment').empty();
-            $('<h2 />').text('Assignment ' + asst.Assignment.Name).appendTo($div);
+
+            // set the title
+            $('<h2 />').text('Assignment: “' + asst.Assignment.Name + '”').appendTo($div);
+
+            // add due date line
+            var $due = $('<p />').text('Due ');
+            formatDate($due, asst.Close);
+            $item.append($due);
+
+            // prepare the editor
             var contents = {};
             $.each(asst.ProblemData || {}, function (key, value) {
                 contents[key] = value;
             });
             $.each(asst.Attempt || {}, function (key, value) {
-                console.log('Attempt: ', key , ' => ', value);
                 contents[key] = value;
             });
             var $editor = createEditor(asst.ProblemType.FieldList, contents, 'student');
             $div.append($editor);
 
+            // let them submit
             var $button = $('<button id="studentsubmit">Submit solution</button>');
             $button.data('assignmentID', asstID);
             $button.appendTo($div);
