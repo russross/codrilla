@@ -26,6 +26,8 @@ type Config struct {
 	RedisPassword string
 	RedisDB       int64
 
+	GraderAddress string
+
 	BrowserIDVerifyURL string
 	BrowserIDAudience  string
 
@@ -79,27 +81,21 @@ func main() {
 		http.ServeFile(w, r, "student.html")
 	})
 
-	// load Lua scripts
+	// connect to database
 	pool = redis.NewTCPClient(config.RedisHost, config.RedisPassword, config.RedisDB)
 	defer pool.Close()
-	loadScripts(pool, scriptPath)
+
+	// load problem types
 	setupProblemTypes(pool)
-	restoreQueue(pool)
+
+	// load lua scripts
+	loadScripts(pool, scriptPath)
+
+	// TODO: catch up on grading
 
 	log.Printf("Listening on %s", config.Address)
 	if err = http.ListenAndServe(config.Address, nil); err != nil {
 		log.Fatal(err)
-	}
-}
-
-func restoreQueue(db *redis.Client) {
-	err := db.SUnionStore("queue:solution:waiting", "queue:solution:waiting", "queue:solution:processing").Err()
-	if err != nil {
-		log.Fatalf("DB error moving processing queue to waiting queue: %v", err)
-	}
-
-	if err = db.Del("queue:solution:processing").Err(); err != nil {
-		log.Fatalf("DB error deleting processing queue: %v", err)
 	}
 }
 

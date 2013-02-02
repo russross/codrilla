@@ -61,7 +61,6 @@ solution:counter - id generator counter
 grader:problemtypes - hash of grading tags to field lists encoded in JSON
 
 queue:solution:waiting - set of solution IDs that need to be evaluated
-queue:solution:processing - set of solution IDs currently being evaluated
 
 
 To create an administrator

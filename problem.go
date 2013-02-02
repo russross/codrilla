@@ -7,6 +7,7 @@ import (
 	"github.com/vmihailenco/redis"
 	"log"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"unicode"
@@ -42,8 +43,9 @@ type ProblemField struct {
 	Type    string
 	List    bool
 	Default string
-	Editor  string
+	Creator string
 	Student string
+	Grader  string
 	Result  string
 }
 
@@ -53,163 +55,44 @@ type ProblemType struct {
 	FieldList []ProblemField
 }
 
-var Python27InputOutputDescription = &ProblemType{
-	Name: "Python 2.7 Input/Output",
-	Tag:  "python27inputoutput",
-	FieldList: []ProblemField{
-		{
-			Name:    "Description",
-			Prompt:  "Enter the problem description here",
-			Title:   "Problem description",
-			Type:    "markdown",
-			Editor:  "edit",
-			Student: "view",
-			Result:  "view",
-		},
-		{
-			Name:    "Reference",
-			Prompt:  "Enter the reference solution here",
-			Title:   "Reference solution",
-			Type:    "python",
-			Editor:  "edit",
-			Student: "nothing",
-			Result:  "nothing",
-		},
-		{
-			Name:    "Candidate",
-			Prompt:  "Enter your solution here",
-			Title:   "Student solution",
-			Type:    "python",
-			Editor:  "nothing",
-			Student: "edit",
-		},
-		{
-			Name:    "Tests",
-			Prompt:  "Test cases",
-			Title:   "Data that will provided on standard in when the program is executed",
-			Type:    "text",
-			List:    true,
-			Editor:  "edit",
-			Student: "view",
-			Result:  "view",
-		},
-		{
-			Name:    "MaxSeconds",
-			Prompt:  "Max time permitted in seconds",
-			Title:   "Max time permitted in seconds",
-			Type:    "int",
-			Default: "10",
-			Editor:  "edit",
-			Student: "view",
-		},
-		{
-			Name:    "MaxMB",
-			Prompt:  "Max memory permitted in megabytes",
-			Title:   "Max memory permitted in megabytes",
-			Type:    "int",
-			Default: "32",
-			Editor:  "edit",
-			Student: "view",
-		},
-		{
-			Name:    "Results",
-			Prompt:  "Result for each test",
-			Title:   "Result for each test",
-			Type:    "text",
-			List:    true,
-			Editor:  "nothing",
-			Student: "nothing",
-			Result:  "view",
-		},
-		{
-			Name:    "Passed",
-			Prompt:  "Did the solution pass?",
-			Title:   "Did the solution pass?",
-			Type:    "bool",
-			Editor:  "nothing",
-			Student: "nothing",
-			Result:  "view",
-		},
-	},
-}
-
-var Python27ExpressionDescription = &ProblemType{
-	Name: "Python 2.7 Expression",
-	Tag:  "python27expression",
-	FieldList: []ProblemField{
-		{
-			Name:    "Description",
-			Prompt:  "Enter the problem description here",
-			Title:   "Problem description",
-			Type:    "markdown",
-			Editor:  "edit",
-			Student: "view",
-		},
-		{
-			Name:    "Reference",
-			Prompt:  "Enter the reference solution here",
-			Title:   "Reference solution",
-			Type:    "python",
-			Editor:  "edit",
-			Student: "nothing",
-		},
-		{
-			Name:    "Candidate",
-			Prompt:  "Enter your solution here",
-			Title:   "Student solution",
-			Type:    "python",
-			Editor:  "nothing",
-			Student: "edit",
-		},
-		{
-			Name:    "Tests",
-			Prompt:  "Test cases",
-			Title:   "Test cases",
-			Type:    "string",
-			List:    true,
-			Editor:  "edit",
-			Student: "view",
-		},
-		{
-			Name:    "MaxSeconds",
-			Prompt:  "Max time permitted in seconds",
-			Title:   "Max time permitted in seconds",
-			Type:    "int",
-			Default: "10",
-			Editor:  "edit",
-			Student: "view",
-		},
-		{
-			Name:    "MaxMB",
-			Prompt:  "Max memory permitted in megabytes",
-			Title:   "Max memory permitted in megabytes",
-			Type:    "int",
-			Default: "32",
-			Editor:  "edit",
-			Student: "view",
-		},
-	},
-}
-
 func setupProblemTypes(db *redis.Client) {
-	ioJson, err := json.Marshal(Python27InputOutputDescription)
-	if err != nil {
-		log.Fatalf("Error json-encoding Python27InputOutputDescription: %v", err)
+	// first get the list of problem types from the grader
+	u := &url.URL{
+		Scheme: "http",
+		Host:   config.GraderAddress,
+		Path:   "/list",
 	}
-	expJson, err := json.Marshal(Python27ExpressionDescription)
+	resp, err := http.Get(u.String())
 	if err != nil {
-		log.Fatalf("Error json-encoding Python27ExpressionDescription: %v", err)
+		log.Fatalf("Failed to load problem type list from %s: %v", u.String(), err)
+	}
+	if resp.StatusCode != 200 {
+		log.Fatalf("Go response %d: %s from %s", resp.StatusCode, resp.Status, u.String())
+	}
+	defer resp.Body.Close()
+
+	var list []*ProblemType
+	if err = json.NewDecoder(resp.Body).Decode(&list); err != nil {
+		log.Fatalf("Failed to decode response from %s: %v", u.String(), err)
+	}
+
+	if len(list) == 0 {
+		log.Fatalf("List of problem types from %s is empty", u.String())
 	}
 
 	if i := db.Del("grader:problemtypes"); i.Err() != nil {
 		log.Fatalf("DB error deleting problem type hash: %v", i.Err())
 	}
 
-	if b := db.HSet("grader:problemtypes", Python27InputOutputDescription.Tag, string(ioJson)); b.Err() != nil {
-		log.Fatalf("DB error adding Python27InputOutputDescription type: %v", b.Err())
-	}
-	if b := db.HSet("grader:problemtypes", Python27ExpressionDescription.Tag, string(expJson)); b.Err() != nil {
-		log.Fatalf("DB error adding Python27ExpressionDescription type: %v", b.Err())
+	for _, elt := range list {
+		log.Printf("Adding %s problem type", elt.Tag)
+		raw, err := json.Marshal(elt)
+		if err != nil {
+			log.Fatalf("Error re-encoding problem type description for %s: %v", elt.Tag, err)
+		}
+		if b := db.HSet("grader:problemtypes", elt.Tag, string(raw)); b.Err() != nil {
+			log.Fatalf("DB error adding %s problem type: %v", elt.Tag, b.Err())
+		}
 	}
 }
 
@@ -362,9 +245,9 @@ func problem_save_common(w http.ResponseWriter, r *http.Request, db *redis.Clien
 	filtered := make(map[string]interface{})
 
 	for _, field := range problemType.FieldList {
-		if value, present := problem.Data[field.Name]; present && field.Editor == "edit" {
+		if value, present := problem.Data[field.Name]; present && field.Creator == "edit" {
 			filtered[field.Name] = value
-		} else if field.Editor == "edit" {
+		} else if field.Creator == "edit" {
 			log.Printf("Missing %s field in problem", field.Name)
 			http.Error(w, "Problem data missing required field", http.StatusBadRequest)
 			return
