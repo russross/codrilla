@@ -1,3 +1,4 @@
 *.swp
 codrilla
 config.json
+*.sqlite3

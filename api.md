@@ -8,14 +8,14 @@ Students
     Returns some basic info about the student as well as a list of
     active courses the student is enrolled in. Fields include:
     
-    *   Name: the name of the student
     *   Email: the student's email address
+    *   Name: the name of the student
     *   Courses: a list of course
     
     Each course contains:
 
-    *   Name: the name of the course
     *   Tag: the course tag
+    *   Name: the name of the course
     *   Close: timestamp when the course ends
     *   Instructors: list of instructor emails for this course
     *   OpenAssignments: list of open assignments for this course,
@@ -25,14 +25,15 @@ Students
 
     Generic assignment listings contain the following:
 
-    *   Name: the name of the problem
     *   ID: the ID# of the assignment
+    *   Name: the name of the problem
     *   Open: timestamp when the problem opens
     *   Close: timestamp when the problem closes
     *   Active: true if the assignment is currently open
     *   ForCredit: false if this assignment is not required
 
-    For active assignments, the listing also contains the following:
+    The listing also contains the following, which may be blank when
+	not applicable:
 
     *   Attempts: the number of attempts the student has made on
         this problem
@@ -57,19 +58,18 @@ Students
     Returns data about the given assignment, and the student's most
     recent attempt (if applicable):
 
-    *   CourseName: name of the course
     *   CourseTag: tag for the course
+    *   CourseName: name of the course
     *   ProblemType: a problem type object:
 
-        *   Name: name of the problem type
         *   Tag: problem type tag
+        *   Name: name of the problem type
         *   FieldList: list of fields for the problem type
 
     *   ProblemData: contents of the problem
     *   Assignment: assignment listing as in list/courses, with
         generic and student-specific data
     *   Attempt: the student's most recent attempt (if applicable)
-    *   Passed: true if the student has passed this problem
 
 *   Submit an assignment attempt
 

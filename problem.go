@@ -13,6 +13,8 @@ import (
 	"unicode"
 )
 
+var problemTypes map[string]*ProblemType
+
 func init() {
 	r := pat.New()
 	r.Add("GET", `/problem/types`, handlerInstructor(problem_types))
@@ -80,12 +82,20 @@ func setupProblemTypes(db *redis.Client) {
 		log.Fatalf("List of problem types from %s is empty", u.String())
 	}
 
+	problemTypes = make(map[string]*ProblemType)
+
+	for _, elt := range list {
+		log.Printf("Adding %s problem type", elt.Tag)
+		problemTypes[elt.Tag] = elt
+	}
+
+	// store it in redis, too
+
 	if i := db.Del("problem:types"); i.Err() != nil {
 		log.Fatalf("DB error deleting problem type hash: %v", i.Err())
 	}
 
 	for _, elt := range list {
-		log.Printf("Adding %s problem type", elt.Tag)
 		raw, err := json.Marshal(elt)
 		if err != nil {
 			log.Fatalf("Error re-encoding problem type description for %s: %v", elt.Tag, err)

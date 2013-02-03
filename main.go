@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"compress/gzip"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"github.com/gorilla/sessions"
@@ -25,6 +26,8 @@ type Config struct {
 	RedisHost     string
 	RedisPassword string
 	RedisDB       int64
+
+	DatabaseName string
 
 	GraderAddress string
 
@@ -82,6 +85,7 @@ func main() {
 	})
 
 	// connect to database
+	initDatabase()
 	pool = redis.NewTCPClient(config.RedisHost, config.RedisPassword, config.RedisDB)
 	defer pool.Close()
 
@@ -224,6 +228,34 @@ func (h handlerInstructorJson) ServeHTTP(w http.ResponseWriter, r *http.Request)
 
 	// call the handler
 	h(w, r, pool, session, decoder)
+}
+
+type handlerStudentSQL func(http.ResponseWriter, *http.Request, *sql.DB, *StudentDB, *sessions.Session)
+
+func (h handlerStudentSQL) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	log.Printf("%s %s", r.Method, r.URL.Path)
+
+	// get the session (or create a new one)
+	session, _ := store.Get(r, "codrilla-session")
+
+	// verify that the user is logged in
+	if err := checkSession(pool, session); err != nil {
+		http.Error(w, err.Error(), http.StatusForbidden)
+		return
+	}
+
+	// call the handler
+	db := <-database
+	email := session.Values["email"].(string)
+	student, present := studentsByEmail[email]
+	if !present {
+		log.Printf("StudentDB not found: %s", email)
+		http.Error(w, "Student record not found", http.StatusNotFound)
+		return
+	}
+
+	h(w, r, db, student, session)
+	database <- db
 }
 
 type handlerStudent func(http.ResponseWriter, *http.Request, *redis.Client, *sessions.Session)
