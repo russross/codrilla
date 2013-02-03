@@ -96,9 +96,8 @@ func main() {
 	loadScripts(pool, scriptPath)
 
 	// start grader
-	notifyGrader = make(chan bool, 10)
+	notifyGrader = make(chan int64, 100)
 	go gradeDaemon()
-	notifyGrader <- true
 
 	log.Printf("Listening on %s", config.Address)
 	if err = http.ListenAndServe(config.Address, nil); err != nil {
@@ -230,7 +229,7 @@ func (h handlerInstructorJson) ServeHTTP(w http.ResponseWriter, r *http.Request)
 	h(w, r, pool, session, decoder)
 }
 
-type handlerStudentSQL func(http.ResponseWriter, *http.Request, *sql.DB, *StudentDB, *sessions.Session)
+type handlerStudentSQL func(http.ResponseWriter, *http.Request, *StudentDB, *sessions.Session)
 
 func (h handlerStudentSQL) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	log.Printf("%s %s", r.Method, r.URL.Path)
@@ -244,8 +243,10 @@ func (h handlerStudentSQL) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// call the handler
-	db := <-database
+	// get a read lock
+	mutex.RLock()
+	defer mutex.RUnlock()
+
 	email := session.Values["email"].(string)
 	student, present := studentsByEmail[email]
 	if !present {
@@ -254,8 +255,44 @@ func (h handlerStudentSQL) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h(w, r, db, student, session)
-	database <- db
+	h(w, r, student, session)
+}
+
+type handlerStudentJsonSQLRW func(http.ResponseWriter, *http.Request, *sql.DB, *StudentDB, *json.Decoder)
+
+func (h handlerStudentJsonSQLRW) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	log.Printf("%s %s", r.Method, r.URL.Path)
+
+	// get the session (or create a new one)
+	session, _ := store.Get(r, "codrilla-session")
+
+	// verify that the user is logged in
+	if err := checkSession(pool, session); err != nil {
+		http.Error(w, err.Error(), http.StatusForbidden)
+		return
+	}
+
+	if !checkJsonRequest(w, r) {
+		return
+	}
+
+	// get a read/write lock
+	mutex.Lock()
+	defer mutex.Unlock()
+
+	email := session.Values["email"].(string)
+	student, present := studentsByEmail[email]
+	if !present {
+		log.Printf("StudentDB not found: %s", email)
+		http.Error(w, "Student record not found", http.StatusNotFound)
+		return
+	}
+
+	decoder := json.NewDecoder(r.Body)
+	defer r.Body.Close()
+
+	// call the handler
+	h(w, r, database, student, decoder)
 }
 
 type handlerStudent func(http.ResponseWriter, *http.Request, *redis.Client, *sessions.Session)

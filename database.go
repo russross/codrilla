@@ -5,10 +5,12 @@ import (
 	"encoding/json"
 	_ "github.com/mattn/go-sqlite3"
 	"log"
+	"sync"
 	"time"
 )
 
-var database chan *sql.DB
+var database *sql.DB
+var mutex sync.RWMutex
 
 var (
 	administratorsByEmail = make(map[string]*AdministratorDB)
@@ -80,8 +82,8 @@ type AssignmentDB struct {
 
 type SolutionDB struct {
 	ID                 int64
-	Student            string
-	Assignment         int64
+	Student            *StudentDB
+	Assignment         *AssignmentDB
 	SubmissionsInOrder []*SubmissionDB
 }
 
@@ -94,7 +96,6 @@ type SubmissionDB struct {
 }
 
 func initDatabase() {
-	database = make(chan *sql.DB, 1)
 	db, err := sql.Open("sqlite3", config.DatabaseName)
 	if err != nil {
 		log.Fatalf("Error opening %s: %v", config.DatabaseName, err)
@@ -281,12 +282,16 @@ func initDatabase() {
 	defer rows.Close()
 	for rows.Next() {
 		elt := new(SolutionDB)
-		if err = rows.Scan(&elt.ID, &elt.Student, &elt.Assignment); err != nil {
+		var student string
+		var assignment int64
+		if err = rows.Scan(&elt.ID, &student, &assignment); err != nil {
 			log.Fatalf("DB error scanning Solution: %v", err)
 		}
+		elt.Student = studentsByEmail[student]
+		elt.Assignment = assignmentsByID[assignment]
 		solutionsByID[elt.ID] = elt
-		studentsByEmail[elt.Student].SolutionsByAssignment[elt.Assignment] = elt
-		assignmentsByID[elt.Assignment].SolutionsByStudent[elt.Student] = elt
+		elt.Student.SolutionsByAssignment[assignment] = elt
+		elt.Assignment.SolutionsByStudent[student] = elt
 	}
 
 	// Submissions
@@ -309,11 +314,14 @@ func initDatabase() {
 		}
 		if gradeReportJson == "" {
 			elt.GradeReport = make(map[string]interface{})
+
+			// missing grade report? add this to the grading queue
+			gradeQueue[solution] = true
 		} else if err = json.Unmarshal([]byte(gradeReportJson), &elt.GradeReport); err != nil {
 			log.Fatalf("JSON error in GradeReport for Solution %d at %v: %v", elt.Solution.ID, elt.TimeStamp, err)
 		}
 		elt.Solution.SubmissionsInOrder = append(elt.Solution.SubmissionsInOrder, elt)
 	}
 
-	database <- db
+	database = db
 }

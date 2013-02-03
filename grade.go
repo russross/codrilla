@@ -2,13 +2,12 @@ package main
 
 import (
 	"bytes"
+	"database/sql"
 	"encoding/json"
 	"fmt"
-	"github.com/vmihailenco/redis"
 	"log"
 	"net/http"
 	"net/url"
-	"strconv"
 	"time"
 )
 
@@ -19,27 +18,29 @@ type GradeItem struct {
 	Attempt     map[string]interface{}
 }
 
-var notifyGrader chan bool
+var notifyGrader chan int64
+var gradeQueue = make(map[int64]bool)
 
 func gradeDaemon() {
 	delay := time.Second
-	retry := false
+	retry := true
 	for {
 		if !retry {
-			<-notifyGrader
+			gradeQueue[<-notifyGrader] = true
 		}
 
 		// clear out the channel
 	clearLoop:
 		for {
 			select {
-			case <-notifyGrader:
+			case id := <-notifyGrader:
+				gradeQueue[id] = true
 			default:
 				break clearLoop
 			}
 		}
 
-		err := gradeAll(pool)
+		err := gradeAll()
 		if err != nil {
 			log.Printf("gradeDaemon err: sleeping for %v", delay)
 			time.Sleep(delay)
@@ -57,44 +58,67 @@ func gradeDaemon() {
 	}
 }
 
-func gradeAll(db *redis.Client) (err error) {
+func gradeAll() (err error) {
 	didwork := true
 	for didwork && err == nil {
-		didwork, err = gradeOne(db)
+		didwork, err = gradeOne(database)
 	}
 	return
 }
 
-func gradeOne(db *redis.Client) (bool, error) {
+func gradeOne(db *sql.DB) (bool, error) {
 	// get an item to grade
-	iface := db.EvalSha(luaScripts["gradeget"], nil, []string{})
-	if iface.Err() != nil {
-		log.Printf("gradeOne: DB error getting item to grade: %v", iface.Err())
-		return false, iface.Err()
-	}
-	raw := iface.Val().(string)
-
-	// was there nothing to do?
-	if raw == "" {
-		return false, nil
+	var id int64
+	for id, _ = range gradeQueue {
+		break
 	}
 
-	// parse the item to grade
-	item := new(GradeItem)
-	if err := json.Unmarshal([]byte(raw), item); err != nil {
-		log.Printf("gradeOne: Unable to parse submission data: %v", err)
-		return false, err
+	// get a read lock to retrieve the submission data
+	mutex.RLock()
+	solution, present := solutionsByID[id]
+	if !present {
+		log.Printf("gradeOne: no solution found with ID %d", id)
+		delete(gradeQueue, id)
+		mutex.RUnlock()
+		return false, fmt.Errorf("no solution found with given ID")
 	}
 
-	log.Printf("Grading solution #%d", item.SolutionID)
+	// get the problem type
+	asst := solution.Assignment
+	problem := asst.Problem
+	problemType, present := problemTypes[problem.Type]
+	if !present {
+		log.Printf("gradeOne: unknown problem type %s found for solution %d", problem.Type, id)
+		delete(gradeQueue, id)
+		mutex.RUnlock()
+		return false, fmt.Errorf("unknown problem type")
+	}
+
+	// find the first ungraded submission
+	var i int
+	for i = len(solution.SubmissionsInOrder) - 1; i >= 0; i-- {
+		if len(solution.SubmissionsInOrder[i].GradeReport) > 0 {
+			break
+		}
+	}
+	i++
+	if i >= len(solution.SubmissionsInOrder) {
+		delete(gradeQueue, id)
+		mutex.RUnlock()
+		return false, fmt.Errorf("No ungraded submissions")
+	}
+	attempt := solution.SubmissionsInOrder[i]
+
+	log.Printf("Grading solution #%d (%d/%d) of type %s for %s",
+		id, i+1, len(solution.SubmissionsInOrder), problem.Type, solution.Student.Email)
 
 	// merge the fields into a single submission record
 	merged := make(map[string]interface{})
 
-	for _, field := range item.ProblemType.FieldList {
-		if value, present := item.Attempt[field.Name]; present && field.Student == "edit" && field.Grader == "view" {
+	for _, field := range problemType.FieldList {
+		if value, present := attempt.Submission[field.Name]; present && field.Student == "edit" && field.Grader == "view" {
 			merged[field.Name] = value
-		} else if value, present := item.ProblemData[field.Name]; present && field.Creator == "edit" && field.Grader == "view" {
+		} else if value, present := problem.Data[field.Name]; present && field.Creator == "edit" && field.Grader == "view" {
 			merged[field.Name] = value
 		}
 	}
@@ -103,14 +127,19 @@ func gradeOne(db *redis.Client) (bool, error) {
 	requestBody, err := json.Marshal(merged)
 	if err != nil {
 		log.Printf("gradeOne: error marshalling data for grader: %v", err)
+		delete(gradeQueue, id)
+		mutex.RUnlock()
 		return false, err
 	}
+
+	// release the read mutex
+	mutex.RUnlock()
 
 	// send it to the grader
 	u := &url.URL{
 		Scheme: "http",
 		Host:   config.GraderAddress,
-		Path:   "/" + item.ProblemType.Tag,
+		Path:   "/" + problemType.Tag,
 	}
 	request, err := http.NewRequest("POST", u.String(), bytes.NewReader(requestBody))
 	if err != nil {
@@ -141,19 +170,51 @@ func gradeOne(db *redis.Client) (bool, error) {
 		log.Printf("gradeOne: response list from %s is emtpy", u.String())
 		return false, fmt.Errorf("Empty grader report")
 	}
+	if _, present = report["Passed"]; !present {
+		log.Printf("gradeOne: response is missing Passed field")
+		return false, fmt.Errorf("Missing Passed field")
+	}
 
-	// re-encode the report
-	data, err := json.Marshal(report)
+	// re-encode the response
+	graderReportJson, err := json.Marshal(report)
 	if err != nil {
-		log.Printf("gradeOne: error JSON encoding final report: %v", err)
-		return false, err
+		log.Printf("gradeOne: JSON error encoding grade report: %v", err)
+		return false, fmt.Errorf("JSON error encoding grade report")
 	}
 
 	// record the response
-	id := strconv.FormatInt(item.SolutionID, 10)
-	if iface = db.EvalSha(luaScripts["gradeput"], nil, []string{id, string(data)}); iface.Err() != nil {
-		log.Printf("gradeOne: DB error saving graded item: %v", iface.Err())
-		return false, iface.Err()
+	mutex.Lock()
+	defer mutex.Unlock()
+
+	solution = solutionsByID[id]
+	if i >= len(solution.SubmissionsInOrder) || len(solution.SubmissionsInOrder[i].GradeReport) > 0 {
+		log.Printf("gradeOne: submission changed during grading for %d", id)
+		return false, fmt.Errorf("Submission change during grading")
+	}
+	sub := solution.SubmissionsInOrder[i]
+	passed := false
+
+	switch t := report["Passed"].(type) {
+	case bool:
+		passed = t
+	default:
+		log.Printf("gradeOne: Passed field of wrong type %t", t)
+		return false, fmt.Errorf("Passed field of wrong type")
+	}
+
+	// write to database first
+	_, err = database.Exec("update Submission set GradeReport = ?, Passed = ? where Solution = ? and TimeStamp = ?",
+		graderReportJson, passed, sub.Solution.ID, sub.TimeStamp)
+	if err != nil {
+		log.Printf("gradeOne: DB error writing result: %v", err)
+		return false, err
+	}
+	sub.GradeReport = report
+	sub.Passed = passed
+
+	// remove this solution from the queue?
+	if i == len(solution.SubmissionsInOrder)-1 {
+		delete(gradeQueue, id)
 	}
 
 	return true, nil

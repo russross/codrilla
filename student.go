@@ -5,12 +5,10 @@ import (
 	"encoding/json"
 	"github.com/gorilla/pat"
 	"github.com/gorilla/sessions"
-	"github.com/vmihailenco/redis"
 	"log"
 	"net/http"
 	"sort"
 	"strconv"
-	"strings"
 	"time"
 )
 
@@ -19,8 +17,8 @@ func init() {
 	r.Add("GET", `/student/courses`, handlerStudentSQL(student_courses))
 	r.Add("GET", `/student/grades/{coursetag:[\w:_\-]+$}`, handlerStudentSQL(student_grades))
 	r.Add("GET", `/student/assignment/{id:\d+$}`, handlerStudentSQL(student_assignment))
-	r.Add("POST", `/student/submit/{id:\d+$}`, handlerStudentJson(student_submit))
-	r.Add("GET", `/student/result/{id:\d+}/{n:-1$|\d+$}`, handlerStudent(student_result))
+	r.Add("POST", `/student/submit/{id:\d+$}`, handlerStudentJsonSQLRW(student_submit))
+	r.Add("GET", `/student/result/{id:\d+}/{n:-1$|\d+$}`, handlerStudentSQL(student_result))
 	http.Handle("/student/", r)
 }
 
@@ -33,7 +31,7 @@ type CourseListing struct {
 	NextAssignment  *AssignmentListing
 }
 
-func getCourseListing(db *sql.DB, course *CourseDB, student *StudentDB) *CourseListing {
+func getCourseListing(course *CourseDB, student *StudentDB) *CourseListing {
 	now := time.Now()
 	elt := &CourseListing{
 		Tag:             course.Tag,
@@ -48,14 +46,14 @@ func getCourseListing(db *sql.DB, course *CourseDB, student *StudentDB) *CourseL
 	var next *AssignmentDB
 	for _, asst := range course.Assignments {
 		if now.After(asst.Open) && now.Before(asst.Close) {
-			elt.OpenAssignments = append(elt.OpenAssignments, getAssignmentListing(db, asst, student))
+			elt.OpenAssignments = append(elt.OpenAssignments, getAssignmentListing(asst, student))
 		} else if now.Before(asst.Open) && (next == nil || asst.Open.Before(next.Open)) {
 			next = asst
 		}
 	}
 	sort.Sort(AssignmentsByClose(elt.OpenAssignments))
 	if next != nil {
-		elt.NextAssignment = getAssignmentListing(db, next, student)
+		elt.NextAssignment = getAssignmentListing(next, student)
 	}
 	return elt
 }
@@ -78,7 +76,7 @@ func (p AssignmentsByClose) Len() int           { return len(p) }
 func (p AssignmentsByClose) Less(i, j int) bool { return p[i].Close.Before(p[j].Close) }
 func (p AssignmentsByClose) Swap(i, j int)      { p[i], p[j] = p[j], p[i] }
 
-func getAssignmentListing(db *sql.DB, asst *AssignmentDB, student *StudentDB) *AssignmentListing {
+func getAssignmentListing(asst *AssignmentDB, student *StudentDB) *AssignmentListing {
 	now := time.Now()
 	elt := &AssignmentListing{
 		ID:        asst.ID,
@@ -112,7 +110,7 @@ type StudentCoursesResponse struct {
 	Courses []*CourseListing
 }
 
-func student_courses(w http.ResponseWriter, r *http.Request, db *sql.DB, student *StudentDB, session *sessions.Session) {
+func student_courses(w http.ResponseWriter, r *http.Request, student *StudentDB, session *sessions.Session) {
 	resp := &StudentCoursesResponse{
 		Email:   student.Email,
 		Name:    student.Name,
@@ -124,14 +122,14 @@ func student_courses(w http.ResponseWriter, r *http.Request, db *sql.DB, student
 	}
 	sort.Strings(tags)
 	for _, tag := range tags {
-		resp.Courses = append(resp.Courses, getCourseListing(db, student.Courses[tag], student))
+		resp.Courses = append(resp.Courses, getCourseListing(student.Courses[tag], student))
 	}
 
 	writeJson(w, r, resp)
 }
 
 // get a list of assignments for this student with grade info
-func student_grades(w http.ResponseWriter, r *http.Request, db *sql.DB, student *StudentDB, session *sessions.Session) {
+func student_grades(w http.ResponseWriter, r *http.Request, student *StudentDB, session *sessions.Session) {
 	courseTag := r.URL.Query().Get(":coursetag")
 
 	course, present := student.Courses[courseTag]
@@ -145,7 +143,7 @@ func student_grades(w http.ResponseWriter, r *http.Request, db *sql.DB, student 
 	now := time.Now()
 	for _, asst := range course.Assignments {
 		if !now.Before(asst.Open) {
-			list = append(list, getAssignmentListing(db, asst, student))
+			list = append(list, getAssignmentListing(asst, student))
 		}
 	}
 	sort.Sort(AssignmentsByClose(list))
@@ -162,7 +160,7 @@ type StudentAssignmentResponse struct {
 	Attempt     map[string]interface{}
 }
 
-func student_assignment(w http.ResponseWriter, r *http.Request, db *sql.DB, student *StudentDB, session *sessions.Session) {
+func student_assignment(w http.ResponseWriter, r *http.Request, student *StudentDB, session *sessions.Session) {
 	id, err := strconv.ParseInt(r.URL.Query().Get(":id"), 10, 64)
 	if err != nil {
 		log.Printf("Bad ID: %s", r.URL.Query().Get(":id"))
@@ -234,62 +232,125 @@ func student_assignment(w http.ResponseWriter, r *http.Request, db *sql.DB, stud
 		CourseName:  course.Name,
 		ProblemType: problemType,
 		ProblemData: data,
-		Assignment:  getAssignmentListing(db, asst, student),
+		Assignment:  getAssignmentListing(asst, student),
 		Attempt:     attempt,
 	}
 
 	writeJson(w, r, resp)
 }
 
-type StudentResult struct {
-	CourseName  string
+type StudentGraderReportResult struct {
 	CourseTag   string
+	CourseName  string
 	ProblemType *ProblemType
 	ProblemData map[string]interface{}
-	Assignment  map[string]interface{}
+	Assignment  *AssignmentListing
 	Attempt     map[string]interface{}
 	ResultData  map[string]interface{}
 }
 
-func student_result(w http.ResponseWriter, r *http.Request, db *redis.Client, session *sessions.Session) {
-	email := session.Values["email"].(string)
-	id := r.URL.Query().Get(":id")
-	n := r.URL.Query().Get(":n")
+func student_result(w http.ResponseWriter, r *http.Request, student *StudentDB, session *sessions.Session) {
+	id, err := strconv.ParseInt(r.URL.Query().Get(":id"), 10, 64)
+	if err != nil {
+		log.Printf("Bad ID: %s", r.URL.Query().Get(":id"))
+		http.Error(w, "Not found", http.StatusNotFound)
+		return
+	}
+	n64, err := strconv.ParseInt(r.URL.Query().Get(":n"), 10, 64)
+	if err != nil {
+		log.Printf("Bad submission number: %s", r.URL.Query().Get(":n"))
+		http.Error(w, "Not found", http.StatusNotFound)
+		return
+	}
+	n := int(n64)
 
-	iface := db.EvalSha(luaScripts["studentresult"], nil, []string{email, id, n})
-	if iface.Err() != nil {
-		if strings.Contains(iface.Err().Error(), "404 Not Found") {
-			log.Printf("Assignment result not found")
-			http.Error(w, "Not found", http.StatusNotFound)
-		} else {
-			log.Printf("DB error getting result %s for student %s: %v", id, email, iface.Err())
-			http.Error(w, "DB error", http.StatusInternalServerError)
-		}
+	// find the assignment
+	asst, present := assignmentsByID[id]
+	if !present {
+		log.Printf("No such assignment: %d", id)
+		http.Error(w, "Not found", http.StatusNotFound)
 		return
 	}
 
-	response := new(StudentResult)
-	if err := json.Unmarshal([]byte(iface.Val().(string)), response); err != nil {
-		log.Printf("Unable to parse JSON response from DB: %v", err)
-		http.Error(w, "DB error", http.StatusInternalServerError)
+	// find the course
+	course := asst.Course
+
+	// make sure the course is active
+	now := time.Now()
+	if now.After(course.Close) {
+		log.Printf("Course is not active: %s", course.Tag)
+		http.Error(w, "Course not active", http.StatusForbidden)
+		return
+	}
+
+	// make sure the student is in the course
+	if _, present := student.Courses[course.Tag]; !present {
+		log.Printf("Student not enrolled in course: %s", course.Tag)
+		http.Error(w, "Not enrolled in course", http.StatusForbidden)
+		return
+	}
+
+	// get the problem
+	problem := asst.Problem
+
+	// make sure we still know about this problem type
+	problemType, present := problemTypes[problem.Type]
+	if !present {
+		log.Printf("Problem %d has unknown type %s", problem.ID, problem.Type)
+		http.Error(w, "Unknown problem type", http.StatusInternalServerError)
 		return
 	}
 
 	// filter problem fields down to what the student is allowed to see
 	data := make(map[string]interface{})
-	for _, field := range response.ProblemType.FieldList {
-		if value, present := response.ProblemData[field.Name]; present && field.Student == "view" {
+	for _, field := range problemType.FieldList {
+		if value, present := problem.Data[field.Name]; present && field.Student == "view" {
 			data[field.Name] = value
 		}
 	}
-	response.ProblemData = data
 
-	writeJson(w, r, response)
+	// get the student attempt
+	sol, present := student.SolutionsByAssignment[asst.ID]
+	if !present {
+		log.Printf("Student has not submitted a solution for this assignment")
+		http.Error(w, "Submission not found", http.StatusNotFound)
+		return
+
+	}
+
+	// make sure this is a valid submission number
+	if n == -1 {
+		n = len(sol.SubmissionsInOrder) - 1
+	}
+	if n < 0 || n >= len(sol.SubmissionsInOrder) {
+		log.Printf("Invalid submission number: %d", n)
+		http.Error(w, "Submission not found", http.StatusNotFound)
+		return
+	}
+
+	// get the submission
+	submission := sol.SubmissionsInOrder[n]
+
+	resp := &StudentGraderReportResult{
+		CourseTag:   course.Tag,
+		CourseName:  course.Name,
+		ProblemType: problemType,
+		ProblemData: data,
+		Assignment:  getAssignmentListing(asst, student),
+		Attempt:     submission.Submission,
+		ResultData:  submission.GradeReport,
+	}
+
+	writeJson(w, r, resp)
 }
 
-func student_submit(w http.ResponseWriter, r *http.Request, db *redis.Client, session *sessions.Session, decoder *json.Decoder) {
-	email := session.Values["email"].(string)
-	assignmentID := r.URL.Query().Get(":id")
+func student_submit(w http.ResponseWriter, r *http.Request, db *sql.DB, student *StudentDB, decoder *json.Decoder) {
+	assignmentID, err := strconv.ParseInt(r.URL.Query().Get(":id"), 10, 64)
+	if err != nil {
+		log.Printf("Bad assignment ID: %s", r.URL.Query().Get(":id"))
+		http.Error(w, "Assignment not found", http.StatusNotFound)
+		return
+	}
 
 	submission := make(map[string]interface{})
 	if err := decoder.Decode(&submission); err != nil {
@@ -298,21 +359,27 @@ func student_submit(w http.ResponseWriter, r *http.Request, db *redis.Client, se
 		return
 	}
 
-	// make sure this is an active assignment for a course the student is in
-	// and get the problem type description object
-	iface := db.EvalSha(luaScripts["getproblemtypeforsubmission"], []string{}, []string{email, assignmentID})
-	if iface.Err() != nil {
-		log.Printf("DB error checking if submission is permitted: %v", iface.Err())
-		http.Error(w, "DB error", http.StatusInternalServerError)
+	// make sure this assignment exists
+	asst, present := assignmentsByID[assignmentID]
+	if !present {
+		log.Printf("No such assignment: %d", assignmentID)
+		http.Error(w, "Assignment not found", http.StatusNotFound)
 		return
 	}
-	problemTypeJson := iface.Val().(string)
 
-	// decode the problem object
-	problemType := new(ProblemType)
-	if err := json.Unmarshal([]byte(problemTypeJson), problemType); err != nil {
-		log.Printf("Unable to parse JSON problem type response from DB: %v", err)
-		http.Error(w, "DB error", http.StatusInternalServerError)
+	// make sure the assignment is active
+	now := time.Now()
+	if now.Before(asst.Open) || now.After(asst.Close) {
+		log.Printf("Assignment is not active: %d", assignmentID)
+		http.Error(w, "Assignment not active", http.StatusForbidden)
+		return
+	}
+
+	// get the problem type description
+	problemType, present := problemTypes[asst.Problem.Type]
+	if !present {
+		log.Printf("Problem type is unknown: %s", asst.Problem.Type)
+		http.Error(w, "Unknown problem type", http.StatusInternalServerError)
 		return
 	}
 
@@ -329,19 +396,101 @@ func student_submit(w http.ResponseWriter, r *http.Request, db *redis.Client, se
 		}
 	}
 
-	attemptJson, err := json.Marshal(filtered)
-	if err != nil {
-		log.Printf("Error encoding submission as JSON: %v", err)
-		http.Error(w, "Error encoding submission as JSON", http.StatusInternalServerError)
+	// get the course
+	course := asst.Course
+
+	// make sure this is an active course
+	if now.After(course.Close) {
+		log.Printf("Not an active course: %s", course.Tag)
+		http.Error(w, "Assignment not found", http.StatusNotFound)
 		return
 	}
 
-	// now save the submission and trigger the grader
-	iface = db.EvalSha(luaScripts["studentsubmit"], []string{}, []string{email, assignmentID, string(attemptJson)})
-	if iface.Err() != nil {
-		log.Printf("DB error saving submission: %v", iface.Err())
+	// make sure the student is enrolled in the course
+	if _, present := student.Courses[course.Tag]; !present {
+		log.Printf("Not enrolled in the course: %s", course.Tag)
+		http.Error(w, "Not enrolled in the course", http.StatusForbidden)
+		return
+	}
+
+	txn, err := db.Begin()
+	if err != nil {
+		log.Printf("DB error startint transaction: %v", err)
 		http.Error(w, "DB error", http.StatusInternalServerError)
 		return
 	}
-	notifyGrader <- true
+
+	// default if we quit along the way is to rollback
+	defer txn.Rollback()
+
+	// is this the first submission for this assignment?
+	solution, solutionPresent := student.SolutionsByAssignment[assignmentID]
+	if !solutionPresent {
+		result, err := txn.Exec("insert into Solution values (null, ?, ?)",
+			student.Email,
+			asst.ID)
+		if err != nil {
+			log.Printf("DB error inserting new Solution: %v", err)
+			http.Error(w, "DB error", http.StatusInternalServerError)
+			return
+		}
+		id, err := result.LastInsertId()
+		if err != nil {
+			log.Printf("DB error getting ID for new Solution: %v", err)
+			http.Error(w, "DB error", http.StatusInternalServerError)
+			return
+		}
+		solution = &SolutionDB{
+			ID:                 id,
+			Student:            student,
+			Assignment:         asst,
+			SubmissionsInOrder: []*SubmissionDB{},
+		}
+	}
+
+	submissionJson, err := json.Marshal(filtered)
+	if err != nil {
+		log.Printf("JSON error encoding submission: %v", err)
+		http.Error(w, "Encoding error", http.StatusInternalServerError)
+		return
+	}
+
+	// create the submission
+	_, err = txn.Exec("insert into Submission values (?, ?, ?, ?, ?)",
+		solution.ID,
+		now,
+		submissionJson,
+		nil,
+		false)
+	if err != nil {
+		log.Printf("DB insert error on Submission: %v", err)
+		http.Error(w, "DB error", http.StatusInternalServerError)
+		return
+	}
+
+	// commit the transaction
+	if err = txn.Commit(); err != nil {
+		log.Printf("DB commit error: %v", err)
+		http.Error(w, "DB error", http.StatusInternalServerError)
+		return
+	}
+
+	// add the solution to memory if needed
+	if !solutionPresent {
+		asst.SolutionsByStudent[student.Email] = solution
+		student.SolutionsByAssignment[asst.ID] = solution
+	}
+
+	// add the submission to memory
+	sub := &SubmissionDB{
+		Solution:    solution,
+		TimeStamp:   now,
+		Submission:  submission,
+		GradeReport: make(map[string]interface{}),
+		Passed:      false,
+	}
+	solution.SubmissionsInOrder = append(solution.SubmissionsInOrder, sub)
+
+	// notify the grader of work to do
+	notifyGrader <- solution.ID
 }
