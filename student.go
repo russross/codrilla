@@ -13,11 +13,11 @@ import (
 
 func init() {
 	r := pat.New()
-	r.Add("GET", `/student/courses`, handlerStudentSQL(student_courses))
-	r.Add("GET", `/student/grades/{coursetag:[\w:_\-]+$}`, handlerStudentSQL(student_grades))
-	r.Add("GET", `/student/assignment/{id:\d+$}`, handlerStudentSQL(student_assignment))
-	r.Add("POST", `/student/submit/{id:\d+$}`, handlerStudentJsonSQLRW(student_submit))
-	r.Add("GET", `/student/result/{id:\d+}/{n:-1$|\d+$}`, handlerStudentSQL(student_result))
+	r.Add("GET", `/student/courses`, handlerStudent(student_courses))
+	r.Add("GET", `/student/grades/{coursetag:[\w:_\-]+$}`, handlerStudent(student_grades))
+	r.Add("GET", `/student/assignment/{id:\d+$}`, handlerStudent(student_assignment))
+	r.Add("POST", `/student/submit/{id:\d+$}`, handlerStudentJson(student_submit))
+	r.Add("GET", `/student/result/{id:\d+}/{n:-1$|\d+$}`, handlerStudent(student_result))
 	http.Handle("/student/", r)
 }
 
@@ -68,6 +68,12 @@ type AssignmentListing struct {
 	ToBeGraded int
 	Passed     bool
 }
+
+type AssignmentsByOpen []*AssignmentListing
+
+func (p AssignmentsByOpen) Len() int           { return len(p) }
+func (p AssignmentsByOpen) Less(i, j int) bool { return p[i].Open.Before(p[j].Open) }
+func (p AssignmentsByOpen) Swap(i, j int)      { p[i], p[j] = p[j], p[i] }
 
 type AssignmentsByClose []*AssignmentListing
 

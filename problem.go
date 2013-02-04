@@ -17,12 +17,12 @@ var problemTypes map[string]*ProblemType
 
 func init() {
 	r := pat.New()
-	r.Add("GET", `/problem/types`, handlerInstructorSQL(problem_types))
-	r.Add("GET", `/problem/type/{tag:[\w:]+$}`, handlerInstructorSQL(problem_type))
-	r.Add("GET", `/problem/get/{id:\d+$}`, handlerInstructorSQL(problem_get))
-	r.Add("GET", `/problem/tags`, handlerInstructorSQL(problem_tags))
-	r.Add("POST", `/problem/new`, handlerInstructorJsonSQLRW(problem_new))
-	r.Add("POST", `/problem/update/{id:\d+$}`, handlerInstructorJsonSQLRW(problem_update))
+	r.Add("GET", `/problem/types`, handlerInstructor(problem_types))
+	r.Add("GET", `/problem/type/{tag:[\w:]+$}`, handlerInstructor(problem_type))
+	r.Add("GET", `/problem/get/{id:\d+$}`, handlerInstructor(problem_get))
+	r.Add("GET", `/problem/tags`, handlerInstructor(problem_tags))
+	r.Add("POST", `/problem/new`, handlerInstructorJson(problem_new))
+	r.Add("POST", `/problem/update/{id:\d+$}`, handlerInstructorJson(problem_update))
 	http.Handle("/problem/", r)
 }
 

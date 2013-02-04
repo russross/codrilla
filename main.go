@@ -5,7 +5,6 @@ import (
 	"compress/gzip"
 	"database/sql"
 	"encoding/json"
-	"fmt"
 	"github.com/gorilla/sessions"
 	"github.com/vmihailenco/redis"
 	"io/ioutil"
@@ -23,12 +22,7 @@ type Config struct {
 	SessionSecret        string
 	CompressionThreshold int
 
-	RedisHost     string
-	RedisPassword string
-	RedisDB       int64
-
-	DatabaseName string
-
+	DatabaseName  string
 	GraderAddress string
 
 	BrowserIDVerifyURL string
@@ -49,7 +43,6 @@ const scriptPath = "scripts"
 var config Config
 var timeZone *time.Location
 var store sessions.Store
-var pool *redis.Client
 
 // map from filenames to sha1 hashes of all scripts that are loaded
 var luaScripts = make(map[string]string)
@@ -84,16 +77,11 @@ func main() {
 		http.ServeFile(w, r, "index.html")
 	})
 
-	// connect to database
-	initDatabase()
-	pool = redis.NewTCPClient(config.RedisHost, config.RedisPassword, config.RedisDB)
-	defer pool.Close()
-
 	// load problem types
 	setupProblemTypes()
 
-	// load lua scripts
-	loadScripts(pool, scriptPath)
+	// connect to database
+	initDatabase()
 
 	// start grader
 	notifyGrader = make(chan int64, 100)
@@ -105,17 +93,7 @@ func main() {
 	}
 }
 
-func cron(db *redis.Client) error {
-	now := fmt.Sprintf("%d", time.Now().In(timeZone).Unix())
-	if err := db.EvalSha(luaScripts["cron"], nil, []string{now}).Err(); err != nil {
-		log.Printf("Error running cron job: %v", err)
-		return err
-	}
-
-	return nil
-}
-
-type handlerNoAuth func(http.ResponseWriter, *http.Request, *redis.Client, *sessions.Session)
+type handlerNoAuth func(http.ResponseWriter, *http.Request, *sessions.Session)
 
 func (h handlerNoAuth) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	log.Printf("%s %s", r.Method, r.URL.Path)
@@ -123,64 +101,33 @@ func (h handlerNoAuth) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// get the session (or create a new one)
 	session, _ := store.Get(r, "codrilla-session")
 
-	if err := cron(pool); err != nil {
-		http.Error(w, "DB error running cron updates", http.StatusInternalServerError)
-		return
-	}
+	// get a read lock
+	mutex.RLock()
+	defer mutex.RUnlock()
 
 	// call the handler
-	h(w, r, pool, session)
+	h(w, r, session)
 }
 
-type handlerAdmin func(http.ResponseWriter, *http.Request, *redis.Client, *sessions.Session)
+type handlerInstructor func(http.ResponseWriter, *http.Request, *InstructorDB)
 
-func (h handlerAdmin) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+func (h handlerInstructor) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	log.Printf("%s %s", r.Method, r.URL.Path)
 
 	// get the session (or create a new one)
 	session, _ := store.Get(r, "codrilla-session")
-
-	if err := cron(pool); err != nil {
-		http.Error(w, "DB error running cron updates", http.StatusInternalServerError)
-		return
-	}
-
-	// verify that the user is logged in
-	if err := checkSession(pool, session); err != nil {
-		http.Error(w, err.Error(), http.StatusForbidden)
-		return
-	}
-
-	// check that the user is logged in as an admin
-	if session.Values["role"] != "admin" {
-		log.Printf("Call to %s by non-admin", r.URL.Path)
-		http.Error(w, "Must be logged in as an administrator", http.StatusForbidden)
-		return
-	}
-
-	// call the handler
-	h(w, r, pool, session)
-}
-
-type handlerInstructorSQL func(http.ResponseWriter, *http.Request, *InstructorDB)
-
-func (h handlerInstructorSQL) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	log.Printf("%s %s", r.Method, r.URL.Path)
-
-	// get the session (or create a new one)
-	session, _ := store.Get(r, "codrilla-session")
-
-	// verify that the user is logged in
-	if err := checkSession(pool, session); err != nil {
-		http.Error(w, err.Error(), http.StatusForbidden)
-		return
-	}
 
 	// get a read lock
 	mutex.RLock()
 	defer mutex.RUnlock()
 
-	email := session.Values["email"].(string)
+	// verify that the user is logged in
+	email, err := checkSession(session)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusForbidden)
+		return
+	}
+
 	instructor, present := instructorsByEmail[email]
 	if !present {
 		log.Printf("InstructorDB not found: %s", email)
@@ -199,16 +146,21 @@ func (h handlerInstructorSQL) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 	h(w, r, instructor)
 }
 
-type handlerInstructorJsonSQLRW func(http.ResponseWriter, *http.Request, *sql.DB, *InstructorDB, *json.Decoder)
+type handlerInstructorJson func(http.ResponseWriter, *http.Request, *sql.DB, *InstructorDB, *json.Decoder)
 
-func (h handlerInstructorJsonSQLRW) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+func (h handlerInstructorJson) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	log.Printf("%s %s", r.Method, r.URL.Path)
 
 	// get the session (or create a new one)
 	session, _ := store.Get(r, "codrilla-session")
 
+	// get a read/write lock
+	mutex.Lock()
+	defer mutex.Unlock()
+
 	// verify that the user is logged in
-	if err := checkSession(pool, session); err != nil {
+	email, err := checkSession(session)
+	if err != nil {
 		http.Error(w, err.Error(), http.StatusForbidden)
 		return
 	}
@@ -217,11 +169,6 @@ func (h handlerInstructorJsonSQLRW) ServeHTTP(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	// get a read/write lock
-	mutex.Lock()
-	defer mutex.Unlock()
-
-	email := session.Values["email"].(string)
 	instructor, present := instructorsByEmail[email]
 	if !present {
 		log.Printf("InstructorDB not found: %s", email)
@@ -243,92 +190,25 @@ func (h handlerInstructorJsonSQLRW) ServeHTTP(w http.ResponseWriter, r *http.Req
 	h(w, r, database, instructor, decoder)
 }
 
-type handlerInstructor func(http.ResponseWriter, *http.Request, *redis.Client, *sessions.Session)
+type handlerStudent func(http.ResponseWriter, *http.Request, *StudentDB)
 
-func (h handlerInstructor) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+func (h handlerStudent) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	log.Printf("%s %s", r.Method, r.URL.Path)
 
 	// get the session (or create a new one)
 	session, _ := store.Get(r, "codrilla-session")
-
-	if err := cron(pool); err != nil {
-		http.Error(w, "DB error running cron updates", http.StatusInternalServerError)
-		return
-	}
-
-	// verify that the user is logged in
-	if err := checkSession(pool, session); err != nil {
-		http.Error(w, err.Error(), http.StatusForbidden)
-		return
-	}
-
-	// check that the user is logged in as an instructor or admin
-	if session.Values["role"] != "admin" && session.Values["role"] != "instructor" {
-		log.Printf("Call to %s by non-instructor", r.URL.Path)
-		http.Error(w, "Must be logged in as an instructor", http.StatusForbidden)
-		return
-	}
-
-	// call the handler
-	h(w, r, pool, session)
-}
-
-type handlerInstructorJson func(http.ResponseWriter, *http.Request, *redis.Client, *sessions.Session, *json.Decoder)
-
-func (h handlerInstructorJson) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	log.Printf("%s %s", r.Method, r.URL.Path)
-
-	// get the session (or create a new one)
-	session, _ := store.Get(r, "codrilla-session")
-
-	if err := cron(pool); err != nil {
-		http.Error(w, "DB error running cron updates", http.StatusInternalServerError)
-		return
-	}
-
-	// verify that the user is logged in
-	if err := checkSession(pool, session); err != nil {
-		http.Error(w, err.Error(), http.StatusForbidden)
-		return
-	}
-
-	// check that the user is logged in as an instructor or admin
-	if session.Values["role"] != "admin" && session.Values["role"] != "instructor" {
-		log.Printf("Call to %s by non-instructor", r.URL.Path)
-		http.Error(w, "Must be logged in as an instructor", http.StatusForbidden)
-		return
-	}
-
-	if !checkJsonRequest(w, r) {
-		return
-	}
-
-	decoder := json.NewDecoder(r.Body)
-	defer r.Body.Close()
-
-	// call the handler
-	h(w, r, pool, session, decoder)
-}
-
-type handlerStudentSQL func(http.ResponseWriter, *http.Request, *StudentDB)
-
-func (h handlerStudentSQL) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	log.Printf("%s %s", r.Method, r.URL.Path)
-
-	// get the session (or create a new one)
-	session, _ := store.Get(r, "codrilla-session")
-
-	// verify that the user is logged in
-	if err := checkSession(pool, session); err != nil {
-		http.Error(w, err.Error(), http.StatusForbidden)
-		return
-	}
 
 	// get a read lock
 	mutex.RLock()
 	defer mutex.RUnlock()
 
-	email := session.Values["email"].(string)
+	// verify that the user is logged in
+	email, err := checkSession(session)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusForbidden)
+		return
+	}
+
 	student, present := studentsByEmail[email]
 	if !present {
 		log.Printf("StudentDB not found: %s", email)
@@ -339,16 +219,21 @@ func (h handlerStudentSQL) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	h(w, r, student)
 }
 
-type handlerStudentJsonSQLRW func(http.ResponseWriter, *http.Request, *sql.DB, *StudentDB, *json.Decoder)
+type handlerStudentJson func(http.ResponseWriter, *http.Request, *sql.DB, *StudentDB, *json.Decoder)
 
-func (h handlerStudentJsonSQLRW) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+func (h handlerStudentJson) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	log.Printf("%s %s", r.Method, r.URL.Path)
 
 	// get the session (or create a new one)
 	session, _ := store.Get(r, "codrilla-session")
 
+	// get a read/write lock
+	mutex.Lock()
+	defer mutex.Unlock()
+
 	// verify that the user is logged in
-	if err := checkSession(pool, session); err != nil {
+	email, err := checkSession(session)
+	if err != nil {
 		http.Error(w, err.Error(), http.StatusForbidden)
 		return
 	}
@@ -357,11 +242,6 @@ func (h handlerStudentJsonSQLRW) ServeHTTP(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	// get a read/write lock
-	mutex.Lock()
-	defer mutex.Unlock()
-
-	email := session.Values["email"].(string)
 	student, present := studentsByEmail[email]
 	if !present {
 		log.Printf("StudentDB not found: %s", email)
@@ -374,59 +254,6 @@ func (h handlerStudentJsonSQLRW) ServeHTTP(w http.ResponseWriter, r *http.Reques
 
 	// call the handler
 	h(w, r, database, student, decoder)
-}
-
-type handlerStudent func(http.ResponseWriter, *http.Request, *redis.Client, *sessions.Session)
-
-func (h handlerStudent) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	log.Printf("%s %s", r.Method, r.URL.Path)
-
-	// get the session (or create a new one)
-	session, _ := store.Get(r, "codrilla-session")
-
-	if err := cron(pool); err != nil {
-		http.Error(w, "DB error running cron updates", http.StatusInternalServerError)
-		return
-	}
-
-	// verify that the user is logged in
-	if err := checkSession(pool, session); err != nil {
-		http.Error(w, err.Error(), http.StatusForbidden)
-		return
-	}
-
-	// call the handler
-	h(w, r, pool, session)
-}
-
-type handlerStudentJson func(http.ResponseWriter, *http.Request, *redis.Client, *sessions.Session, *json.Decoder)
-
-func (h handlerStudentJson) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	log.Printf("%s %s", r.Method, r.URL.Path)
-
-	// get the session (or create a new one)
-	session, _ := store.Get(r, "codrilla-session")
-
-	if err := cron(pool); err != nil {
-		http.Error(w, "DB error running cron updates", http.StatusInternalServerError)
-		return
-	}
-
-	// verify that the user is logged in
-	if err := checkSession(pool, session); err != nil {
-		http.Error(w, err.Error(), http.StatusForbidden)
-		return
-	}
-
-	if !checkJsonRequest(w, r) {
-		return
-	}
-
-	decoder := json.NewDecoder(r.Body)
-	defer r.Body.Close()
-
-	// call the handler
-	h(w, r, pool, session, decoder)
 }
 
 func writeJson(w http.ResponseWriter, r *http.Request, elt interface{}) {

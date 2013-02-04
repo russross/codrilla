@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"github.com/gorilla/pat"
 	"github.com/gorilla/sessions"
-	"github.com/vmihailenco/redis"
 	"log"
 	"net/http"
 	"net/url"
@@ -21,7 +20,7 @@ func init() {
 	http.Handle("/auth/", r)
 }
 
-func auth_login_browserid(w http.ResponseWriter, r *http.Request, db *redis.Client, session *sessions.Session) {
+func auth_login_browserid(w http.ResponseWriter, r *http.Request, session *sessions.Session) {
 	// get the assertion from the submitted form data
 	assertion := strings.TrimSpace(r.FormValue("Assertion"))
 	if assertion == "" {
@@ -46,10 +45,10 @@ func auth_login_browserid(w http.ResponseWriter, r *http.Request, db *redis.Clie
 	log.Printf("BrowserID login for [%s]", email)
 
 	// create a login session cookie
-	createLoginSession(w, r, db, session, email, false)
+	createLoginSession(w, r, session, email, false)
 }
 
-func auth_login_google(w http.ResponseWriter, r *http.Request, db *redis.Client, session *sessions.Session) {
+func auth_login_google(w http.ResponseWriter, r *http.Request, session *sessions.Session) {
 	errorcode := strings.TrimSpace(r.URL.Query().Get("error"))
 	if errorcode != "" {
 		log.Printf("Error from Google OAuth2.0 login attempt: %s", errorcode)
@@ -80,10 +79,10 @@ func auth_login_google(w http.ResponseWriter, r *http.Request, db *redis.Client,
 	log.Printf("Google OAuth2.0 login for [%s]", email)
 
 	// create a login session cookie
-	createLoginSession(w, r, db, session, email, true)
+	createLoginSession(w, r, session, email, true)
 }
 
-func auth_logout(w http.ResponseWriter, r *http.Request, db *redis.Client, session *sessions.Session) {
+func auth_logout(w http.ResponseWriter, r *http.Request, session *sessions.Session) {
 	expires := time.Date(1970, 0, 0, 0, 0, 1, 0, time.UTC)
 
 	// clear the session cookie
@@ -123,29 +122,17 @@ func auth_logout(w http.ResponseWriter, r *http.Request, db *redis.Client, sessi
 	}
 }
 
-func createLoginSession(w http.ResponseWriter, r *http.Request, db *redis.Client, session *sessions.Session, email string, redirect bool) {
+func createLoginSession(w http.ResponseWriter, r *http.Request, session *sessions.Session, email string, redirect bool) {
 	// start by assuming this is a student
 	role := "student"
 
 	// is this an instructor?
-	b := db.SIsMember("index:instructors:all", email)
-	if err := b.Err(); err != nil {
-		log.Printf("DB error checking if user %s is an instructor: %v", email, err)
-		http.Error(w, "Database error checking if user is an instructor", http.StatusInternalServerError)
-		return
-	}
-	if b.Val() {
+	if _, present := instructorsByEmail[email]; present {
 		role = "instructor"
 	}
 
 	// is this an admin?
-	b = db.SIsMember("index:administrators", email)
-	if err := b.Err(); err != nil {
-		log.Printf("DB error checking if user %s is an administrator: %v", email, err)
-		http.Error(w, "Database error checking if user is an administrator", http.StatusInternalServerError)
-		return
-	}
-	if b.Val() {
+	if _, present := administratorsByEmail[email]; present {
 		role = "admin"
 	}
 
@@ -264,7 +251,7 @@ func google_verify(code string) (email string, err error) {
 
 	if err != nil {
 		log.Printf("Failure contacting Google OAuth2.0 verification server: %v", err)
-		return "", fmt.Errorf("Failure contacting verification server", err)
+		return "", fmt.Errorf("Failure contacting verification server: %v", err)
 	}
 	if resp.StatusCode != 200 {
 		log.Printf("Google OAuth2.0 returned a non-200 response code: %d", resp.StatusCode)
@@ -326,7 +313,7 @@ func google_verify(code string) (email string, err error) {
 	return strings.ToLower(info.Email), nil
 }
 
-func checkSession(db *redis.Client, session *sessions.Session) error {
+func checkSession(session *sessions.Session) (email string, err error) {
 	//session.Values["email"] = "russ@dixie.edu"
 	//session.Values["role"] = "instructor"
 	session.Values["email"] = "jmacdon1@dmail.dixie.edu"
@@ -336,12 +323,12 @@ func checkSession(db *redis.Client, session *sessions.Session) error {
 	// make sure someone is logged in
 	if _, present := session.Values["email"]; !present {
 		log.Printf("Must be logged in")
-		return fmt.Errorf("Must be logged in")
+		return "", fmt.Errorf("Must be logged in")
 	}
-	email := session.Values["email"].(string)
+	email = session.Values["email"].(string)
 	if email == "" {
 		log.Printf("Must be logged in")
-		return fmt.Errorf("Must be logged in")
+		return "", fmt.Errorf("Must be logged in")
 	}
 
 	// check if the session is expired
@@ -349,7 +336,7 @@ func checkSession(db *redis.Client, session *sessions.Session) error {
 	expires := time.Unix(session.Values["expires"].(int64), 0)
 	if expires.Before(now) {
 		log.Printf("Expired session")
-		return fmt.Errorf("Session expired")
+		return "", fmt.Errorf("Session expired")
 	}
 
 	// validate the role
@@ -357,46 +344,31 @@ func checkSession(db *redis.Client, session *sessions.Session) error {
 	switch role {
 	case "admin":
 		// verify that this email is still on the admin list
-		reply := db.SIsMember("index:administrators", email)
-		if err := reply.Err(); err != nil {
-			log.Printf("DB error checking admin list for %s: %v", email, err)
-			return fmt.Errorf("DB error checking admin list")
-		}
-		if !reply.Val() {
+		if _, present := administratorsByEmail[email]; !present {
 			log.Printf("Session says admin, but user %s is not on the admin list", email)
-			return fmt.Errorf("Must be logged in as an administrator")
+			return "", fmt.Errorf("Must be logged in as an administrator")
 		}
 
 	case "instructor":
 		// verify that this email is still on the instructors list
-		reply := db.SIsMember("index:instructors:all", email)
-		if err := reply.Err(); err != nil {
-			log.Printf("DB error checking instructors list for %s: %v", email, err)
-			return fmt.Errorf("DB error checking instructors list")
-		}
-		if !reply.Val() {
+		if _, present := instructorsByEmail[email]; !present {
 			log.Printf("Session says instructor, but user %s is not on the instructor list", email)
-			return fmt.Errorf("Must be logged in as an administrator")
+			return "", fmt.Errorf("Must be logged in as an instructor")
 		}
 
 	case "student":
 		// verify that this email is still on the active student list
-		reply := db.SIsMember("index:students:active", email)
-		if err := reply.Err(); err != nil {
-			log.Printf("DB error checking active student list for %s: %v", email, err)
-			return fmt.Errorf("DB error checking active student list")
-		}
-		if !reply.Val() {
-			log.Printf("Session says student, but user %s is not on the active student list", email)
-			return fmt.Errorf("Student that is logged in is not active in any courses")
+		if _, present := studentsByEmail[email]; !present {
+			log.Printf("Session says student, but user %s is not on the student list", email)
+			return "", fmt.Errorf("Student that is logged in is not active in any courses")
 		}
 
 	default:
 		log.Printf("Unrecognized role in session: %s", role)
-		return fmt.Errorf("Invalid role in session")
+		return "", fmt.Errorf("Invalid role in session")
 	}
 
 	log.Printf("  %s: %s expires in %v", role, email, expires.Sub(now))
 
-	return nil
+	return
 }

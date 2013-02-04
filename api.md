@@ -139,6 +139,7 @@ Courses
     Returns a list of active courses for this instructor. Each
     contains:
 
+	*   Tag: tag for this course
     *   Name: the name of the course
     *   Close: timestamp when the course ends
     *   Instructors: list of instructor emails for this course

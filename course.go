@@ -1,6 +1,7 @@
 package main
 
 import (
+	"database/sql"
 	"encoding/csv"
 	"encoding/json"
 	"fmt"
@@ -9,18 +10,18 @@ import (
 	"github.com/vmihailenco/redis"
 	"log"
 	"net/http"
-	"strconv"
+	"sort"
 	"strings"
 	"time"
 )
 
 func init() {
 	r := pat.New()
-	r.Add("POST", `/course/canvascsvlist`, handlerInstructor(course_canvascsvlist))
-	r.Add("POST", `/course/canvasstudentmappings`, handlerInstructorJson(course_canvasstudentmappings))
 	r.Add("GET", `/course/list`, handlerInstructor(course_list))
-	r.Add("POST", `/course/newassignment/{coursetag:[\w:_\-]+$}`, handlerInstructorJson(course_newassignment))
 	r.Add("GET", `/course/grades/{coursetag:[\w:_\-]+$}`, handlerInstructor(course_grades))
+	//r.Add("POST", `/course/canvascsvlist`, handlerInstructor(course_canvascsvlist))
+	//r.Add("POST", `/course/canvasstudentmappings`, handlerInstructorJson(course_canvasstudentmappings))
+	r.Add("POST", `/course/newassignment/{coursetag:[\w:_\-]+$}`, handlerInstructorJson(course_newassignment))
 	http.Handle("/course/", r)
 }
 
@@ -258,24 +259,75 @@ func course_canvasstudentmappings(w http.ResponseWriter, r *http.Request, db *re
 	}
 }
 
-func course_list(w http.ResponseWriter, r *http.Request, db *redis.Client, session *sessions.Session) {
-	email := session.Values["email"].(string)
+type CourseListResponseElt struct {
+	Tag               string
+	Name              string
+	Close             time.Time
+	Instructors       []string
+	Students          []string
+	OpenAssignments   []*AssignmentListing
+	ClosedAssignments []*AssignmentListing
+	FutureAssignments []*AssignmentListing
+}
 
-	iface := db.EvalSha(luaScripts["courselist"], nil, []string{email})
-	if iface.Err() != nil {
-		log.Printf("DB error getting course listing for %s: %v", email, iface.Err())
-		http.Error(w, "DB error", http.StatusInternalServerError)
-		return
+func course_list(w http.ResponseWriter, r *http.Request, instructor *InstructorDB) {
+	resp := []*CourseListResponseElt{}
+	now := time.Now()
+
+	// get list of active course names in sorted order
+	courses := []string{}
+	for _, course := range instructor.Courses {
+		if now.After(course.Close) {
+			continue
+		}
+		courses = append(courses, course.Tag)
+	}
+	sort.Strings(courses)
+
+	// process courses one at a time
+	for _, courseName := range courses {
+		course := instructor.Courses[courseName]
+		elt := &CourseListResponseElt{
+			Tag:               course.Tag,
+			Name:              course.Name,
+			Close:             course.Close,
+			Instructors:       []string{},
+			Students:          []string{},
+			OpenAssignments:   []*AssignmentListing{},
+			ClosedAssignments: []*AssignmentListing{},
+			FutureAssignments: []*AssignmentListing{},
+		}
+
+		// get instructors
+		for email, _ := range course.Instructors {
+			elt.Instructors = append(elt.Instructors, email)
+		}
+		sort.Strings(elt.Instructors)
+
+		// get students
+		for email, _ := range course.Students {
+			elt.Students = append(elt.Students, email)
+		}
+		sort.Strings(elt.Students)
+
+		// get assignments
+		for _, asst := range course.Assignments {
+			if now.After(asst.Close) {
+				elt.ClosedAssignments = append(elt.ClosedAssignments, getAssignmentListing(asst, nil))
+			} else if now.Before(asst.Open) {
+				elt.FutureAssignments = append(elt.FutureAssignments, getAssignmentListing(asst, nil))
+			} else {
+				elt.OpenAssignments = append(elt.OpenAssignments, getAssignmentListing(asst, nil))
+			}
+		}
+		sort.Sort(AssignmentsByClose(elt.OpenAssignments))
+		sort.Sort(AssignmentsByClose(elt.ClosedAssignments))
+		sort.Sort(AssignmentsByOpen(elt.FutureAssignments))
+
+		resp = append(resp, elt)
 	}
 
-	var response interface{}
-	if err := json.Unmarshal([]byte(iface.Val().(string)), &response); err != nil {
-		log.Printf("Unable to parse JSON response from DB: %v", err)
-		http.Error(w, "DB error", http.StatusInternalServerError)
-		return
-	}
-
-	writeJson(w, r, response)
+	writeJson(w, r, resp)
 }
 
 type NewAssignment struct {
@@ -285,9 +337,21 @@ type NewAssignment struct {
 	ForCredit bool
 }
 
-func course_newassignment(w http.ResponseWriter, r *http.Request, db *redis.Client, session *sessions.Session, decoder *json.Decoder) {
-	email := session.Values["email"].(string)
+func course_newassignment(w http.ResponseWriter, r *http.Request, db *sql.DB, instructor *InstructorDB, decoder *json.Decoder) {
 	courseTag := r.URL.Query().Get(":coursetag")
+	course, present := instructor.Courses[courseTag]
+	if !present {
+		log.Printf("Not an instructor for %s/course does not exist", courseTag)
+		http.Error(w, "Course not found", http.StatusNotFound)
+		return
+	}
+
+	now := time.Now()
+	if now.After(course.Close) {
+		log.Printf("Course %s is closed", courseTag)
+		http.Error(w, "Course is closed", http.StatusForbidden)
+		return
+	}
 
 	asst := new(NewAssignment)
 	if err := decoder.Decode(asst); err != nil {
@@ -296,62 +360,110 @@ func course_newassignment(w http.ResponseWriter, r *http.Request, db *redis.Clie
 		return
 	}
 
-	// sanity check the problem number
-	if asst.Problem < 1 {
-		log.Printf("Problem number must be > 0")
-		http.Error(w, "Invalid problem number", http.StatusBadRequest)
+	// get the problem
+	problem, present := problemsByID[asst.Problem]
+	if !present {
+		log.Printf("Problem %d not found", asst.Problem)
+		http.Error(w, "Problem not found", http.StatusNotFound)
 		return
 	}
-	problem := strconv.FormatInt(asst.Problem, 10)
 
 	// if the open time is missing, use now
-	now := time.Now().Unix()
-	if asst.Open <= 0 {
-		asst.Open = now
+	open := now
+	if asst.Open > 0 {
+		open = time.Unix(asst.Open, 0)
 	}
 
 	// it must not open in the past
-	if asst.Open < now {
+	if now.After(open) {
 		log.Printf("Open time must be in the future")
 		http.Error(w, "Open time must be in the future", http.StatusBadRequest)
 		return
 	}
-	open := strconv.FormatInt(asst.Open, 10)
 
 	// it must not close in the past, or before it opens
-	if asst.Close < now || asst.Close <= asst.Open {
+	closeTime := time.Unix(asst.Close, 0)
+	if now.After(closeTime) || closeTime.Before(open) {
 		log.Printf("Must close in the future after opening")
 		http.Error(w, "Close time must be in the future and after open time", http.StatusBadRequest)
 		return
 	}
-	closeTime := strconv.FormatInt(asst.Close, 10)
-	forCredit := strconv.FormatBool(asst.ForCredit)
 
-	iface := db.EvalSha(luaScripts["newassignment"], nil, []string{email, courseTag, problem, open, closeTime, forCredit})
-	if iface.Err() != nil {
-		log.Printf("DB error creating new assignment for %s: %v", email, iface.Err())
+	// write to the database first
+	result, err := db.Exec("insert into Assignment values (null, ?, ?, ?, ?, ?)",
+		course.Tag,
+		problem.ID,
+		asst.ForCredit,
+		open,
+		closeTime)
+	if err != nil {
+		log.Printf("DB error inserting new Assignment: %v", err)
 		http.Error(w, "DB error", http.StatusInternalServerError)
 		return
 	}
+	id, err := result.LastInsertId()
+	if err != nil {
+		log.Printf("DB error getting ID of new Assignment: %v", err)
+		http.Error(w, "DB error", http.StatusInternalServerError)
+		return
+	}
+
+	// up date in-memory data structures
+	elt := &AssignmentDB{
+		ID:                 id,
+		Course:             course,
+		Problem:            problem,
+		ForCredit:          asst.ForCredit,
+		Open:               open,
+		Close:              closeTime,
+		SolutionsByStudent: make(map[string]*SolutionDB),
+	}
+	assignmentsByID[id] = elt
+	course.Assignments[id] = elt
+	problem.Assignments[id] = elt
 }
 
-func course_grades(w http.ResponseWriter, r *http.Request, db *redis.Client, session *sessions.Session) {
-	email := session.Values["email"].(string)
+type CourseGradesResponseElt struct {
+	Name        string
+	Email       string
+	Assignments []*AssignmentListing
+}
+
+func course_grades(w http.ResponseWriter, r *http.Request, instructor *InstructorDB) {
 	courseTag := r.URL.Query().Get(":coursetag")
-
-	iface := db.EvalSha(luaScripts["coursegrades"], nil, []string{email, courseTag})
-	if iface.Err() != nil {
-		log.Printf("DB error getting course %s grades for %s: %v", courseTag, email, iface.Err())
-		http.Error(w, "DB error", http.StatusInternalServerError)
+	course, present := coursesByTag[courseTag]
+	if !present {
+		log.Printf("No such course/not an instructor for course %s", courseTag)
+		http.Error(w, "Not found", http.StatusNotFound)
 		return
 	}
 
-	var response interface{}
-	if err := json.Unmarshal([]byte(iface.Val().(string)), &response); err != nil {
-		log.Printf("Unable to parse JSON response from DB: %v", err)
-		http.Error(w, "DB error", http.StatusInternalServerError)
-		return
+	// get a list of students in sorted order
+	resp := []*CourseGradesResponseElt{}
+	order := []string{}
+	for email, _ := range course.Students {
+		order = append(order, email)
+	}
+	sort.Strings(order)
+
+	// process each student
+	now := time.Now()
+	for _, email := range order {
+		student := course.Students[email]
+		elt := &CourseGradesResponseElt{
+			Email:       student.Email,
+			Name:        student.Name,
+			Assignments: []*AssignmentListing{},
+		}
+		for _, asst := range course.Assignments {
+			if now.Before(asst.Close) {
+				elt.Assignments = append(elt.Assignments, getAssignmentListing(asst, student))
+			}
+		}
+		sort.Sort(AssignmentsByClose(elt.Assignments))
+
+		resp = append(resp, elt)
 	}
 
-	writeJson(w, r, response)
+	writeJson(w, r, resp)
 }
