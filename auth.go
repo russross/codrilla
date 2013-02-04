@@ -362,7 +362,9 @@ func checkSession(session *sessions.Session) (email string, err error) {
 		return "", fmt.Errorf("Invalid role in session")
 	}
 
-	log.Printf("  %s: %s expires in %v", role, email, expires.Sub(now))
+	remaining := expires.Sub(now)
+	remaining -= remaining % 1000000000
+	log.Printf("  %s: %s expires in %v", role, email, remaining)
 
 	return
 }

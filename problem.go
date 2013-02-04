@@ -90,8 +90,17 @@ func setupProblemTypes() {
 	}
 }
 
+type ProblemTypesResponseElt struct {
+	Name string
+	Tag  string
+}
+
 func problem_types(w http.ResponseWriter, r *http.Request, instructor *InstructorDB) {
-	writeJson(w, r, problemTypes)
+	list := []*ProblemTypesResponseElt{}
+	for _, elt := range problemTypes {
+		list = append(list, &ProblemTypesResponseElt{Name: elt.Name, Tag: elt.Tag})
+	}
+	writeJson(w, r, list)
 }
 
 func problem_type(w http.ResponseWriter, r *http.Request, instructor *InstructorDB) {

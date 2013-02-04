@@ -33,7 +33,7 @@ Students
     *   ForCredit: false if this assignment is not required
 
     The listing also contains the following, which may be blank when
-	not applicable:
+    not applicable:
 
     *   Attempts: the number of attempts the student has made on
         this problem
@@ -91,14 +91,14 @@ Students
     attempt number N. If N is -1, it retrieves the most recent
     attempt. 
 
-	This returns the same data as /student/assignement, with the
-	"Passed" field removed and an additional field added:
+    This returns the same data as /student/assignement, with the
+    "Passed" field removed and an additional field added:
 
-	*   ResultData: contents of the report from the grader. This is
-		empty or missing if the attempt has not been graded yet.
+    *   ResultData: contents of the report from the grader. This is
+        empty or missing if the attempt has not been graded yet.
 
-	The "Attempt" field is also the attempt requested, not
-	necessarily the most recent attempt.
+    The "Attempt" field is also the attempt requested, not
+    necessarily the most recent attempt.
 
 
 Courses
@@ -139,7 +139,7 @@ Courses
     Returns a list of active courses for this instructor. Each
     contains:
 
-	*   Tag: tag for this course
+    *   Tag: tag for this course
     *   Name: the name of the course
     *   Close: timestamp when the course ends
     *   Instructors: list of instructor emails for this course
@@ -193,6 +193,16 @@ Problems
 
     *   Name: the full name of the problem type
     *   Tag: the url-name of the problem type
+
+*   Get a problem type description (instructor)
+
+        GET /problem/type/TAG
+
+    Returns a description of the problem type named by TAG. Each
+    entry has the following:
+
+    *   Name: the full name of the problem type
+    *   Tag: the url-name of the problem type
     *   FieldList: a list of fields in order
 
     Each field is an object containing:
@@ -215,12 +225,6 @@ Problems
     *   Result: action to take when presenting this field as a
         result. Same options as for Creator
 
-*   Get a problem type description (instructor)
-
-        GET /problem/type/TAG
-
-    Returns a description of the problem type named by TAG. Format
-    is same as for listtypes.
 
 *   Load a problem for preview/editing (instructor)
 

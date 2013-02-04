@@ -69,7 +69,7 @@
             var url = 'https://accounts.google.com/o/oauth2/auth' +
                 '?response_type=code' +
                 '&client_id=854211025378.apps.googleusercontent.com' +
-                '&redirect_uri=http://localhost:8080/auth/login/google' +
+                '&redirect_uri=http://' + window.location.host + '/auth/login/google' +
                 '&scope=https://www.googleapis.com/auth/userinfo.email';
             var loginwindow = window.open(url, 'login');
             if (window.focus) loginwindow.focus();
@@ -103,7 +103,7 @@
         if (CODRILLA.Role == 'student')
             setupStudent();
         else if (CODRILLA.Role == 'instructor')
-            setupStudent();
+            setupInstructor();
         else if (CODRILLA.Role == 'admin')
             setupInstructor();
     };
@@ -126,6 +126,13 @@
         refreshStudentSchedule(true);
     };
 
+    var setupInstructor = function () {
+        $('#tabs').tabs('option', 'disabled', [1, 2, 3, 4, 5, 6, 7, 8, 9]);
+        $('#tab-instructor-problemeditor').data('problemTypeTag', 'python27stdin');
+        refreshInstructorProblemEditor();
+        refreshInstructorSchedule(true);
+    };
+
     var refreshStudentSchedule = function (setTab) {
         $.getJSON('/student/courses', function (info) {
             var tobegradedcount = 0;
@@ -137,13 +144,7 @@
                 $div.append('<p>You are not enrolled in any active courses</p>');
                 return;
             }
-            info.Courses.sort(function (a, b) {
-                if (a.Name < b.Name) return -1;
-                else if (a.Name > b.Name) return 1;
-                else return 0;
-            });
             $.each(info.Courses, function (i, course) {
-                if (!course.OpenAssignments) course.OpenAssignments = [];
                 var $link = $('<a href="#" class="gradereportlink" />');
                 $link.data('course', course);
                 $link.text('grade report');
@@ -153,11 +154,6 @@
                     return;
                 }
                 var $list = $('<ul />').appendTo($div);
-                course.OpenAssignments.sort(function (a, b) {
-                    if (a.Close < b.Close) return -1;
-                    else if (a.Close > b.Close) return 1;
-                    else return 0;
-                });
                 $.each(course.OpenAssignments, function (i, asst) {
                     if (asst.ToBeGraded > 0)
                         tobegradedcount++;
@@ -307,17 +303,179 @@
         });
     };
 
+    var refreshInstructorSchedule = function (setTab) {
+        $.getJSON('/course/list', function (courseList) {
+            var $div = $('#tab-instructor-schedule');
+            $div
+                .empty()
+                .append('<h2>Courses and assignments</h2>');
+            if (!courseList || courseList.length == 0) {
+                $div.append('<p>You are not the instructor for any active courses</p>');
+                return;
+            }
+            
+            var $newProbTypeList = $('<select id="newproblemtypelist"></select>');
+            $.getJSON('/problem/types', function (lst) {
+                $.each(lst, function (i, elt) {
+                    $('<option />').text(elt.Name).val(elt.Tag).appendTo($newProbTypeList);
+                });
+            });
+            var $newProbButton = $('<button id="newproblembutton">Create new problem</button>');
+            $newProbButton.data('problemID', undefined);
+            $('<p />').append($newProbTypeList).append($newProbButton).appendTo($div);
+
+            $.each(courseList, function (i, course) {
+                $('<h3 />').text(course.Name).append(' (').append(course.Tag).append(')').appendTo($div);
+                var $newAsstButton = $('<button class="newassignmentbutton">Create new assignment</button>');
+                $newAsstButton.data('courseTag', course.Tag);
+                $('<p />').append($newAsstButton).appendTo($div);
+
+                if (course.OpenAssignments.length > 0) {
+                    $('<h4>Open assignments</h4>').appendTo($div);
+                    var $list = $('<ul />').appendTo($div);
+                    $.each(course.OpenAssignments, function (i, asst) {
+                        $list.append(buildAssignmentListItem(asst, true, true));
+                    });
+                }
+                if (course.FutureAssignments.length > 0) {
+                    $('<h4>Future assignments</h4>').appendTo($div);
+                    var $list = $('<ul />').appendTo($div);
+                    $.each(course.FutureAssignments, function (i, asst) {
+                        $list.append(buildAssignmentListItem(asst));
+                    });
+                }
+                if (course.ClosedAssignments.length > 0) {
+                    $('<h4>Past assignments</h4>').appendTo($div);
+                    var $list = $('<ul />').appendTo($div);
+                    $.each(course.ClosedAssignments, function (i, asst) {
+                        $list.append(buildAssignmentListItem(asst));
+                    });
+                }
+            });
+            if (setTab)
+                $('#tabs').tabs('enable', 5).tabs('option', 'active', 5);
+        });
+    };
+
+    var refreshInstructorProblemEditor = function (setTab) {
+        var problemTypeTag = $('#tab-instructor-problemeditor').data('problemTypeTag');
+        var problemID = $('#tab-instructor-problemeditor').data('problemID');
+        if (!problemTypeTag) return;
+        $.getJSON('/problem/type/' + problemTypeTag, function (problemType) {
+            var buildEditor = function (problemData) {
+                var $div = $('#tab-instructor-problemeditor');
+                $div
+                    .empty()
+                    .append('<h2>Problem Editor</h2>');
+
+                $('<p />').text('Problem type: ' + problemType.Name).appendTo($div);
+
+                var name = '';
+                var tags = [];
+                if (problemData) {
+                    name = problemData.Name;
+                    tags = problemData.Tags;
+                    $('<h3 />').text('Editing existing problem #' + problemData.ID + ': ' + name)
+                        .appendTo($div);
+                    $('<p />').text('Tags: ' + tags.join(' '))
+                        .appendTo($div);
+                }
+
+                var namefield = $('<input type="text" id="problemeditorname">').val(name);
+                var tagsfield = $('<input type="text" id="problemeditortags">').val(tags.join(' '));
+                $('<p>Problem name: </p>').append(namefield).appendTo($div);
+                $('<p>Problem tags: </p>').append(tagsfield).appendTo($div);
+
+                // prepare the editor
+                var contents = {};
+                $.each(problemData || {}, function (key, value) {
+                    contents[key] = value;
+                });
+                var $editor = createEditor(problemType.FieldList, contents, 'creator');
+                $div.append($editor);
+
+                // let them submit
+                var $button = $('<button id="problemeditorsavebutton">Save problem</button>');
+                $button.data('problemID', problemID);
+                $button.appendTo($div);
+
+                if (setTab)
+                    $('#tabs').tabs('enable', 6).tabs('option', 'active', 6);
+
+                $('.CodeMirror').each(function () { this.CodeMirror.refresh(); });
+            };
+
+            // if we are editing an existing problem, load it
+            if (problemID)
+                $.getJSON('/problem/get/' + problemID, buildEditor);
+            else
+                buildEditor();
+        });
+    };
+
+    var refreshInstructorAssignmentEditor = function (setTab) {
+        var courseTag = $('#tab-instructor-assignmenteditor').data('courseTag');
+        if (!courseTag) return;
+        var asst = $('#tab-instructor-assignmenteditor').data('asst');
+        $.getJSON('/problem/tags', function (container) {
+            var $div = $('#tab-instructor-assignmenteditor');
+            $div
+                .empty()
+                .append('<h2>Assignment Editor</h2>');
+
+            $('<h3 />').text('Course: ' + courseTag).appendTo($div);
+            $('<h3>Start date (leave blank to start now)</h3>').appendTo($div);
+            $('<input type="text" id="assignmentstartdate">').appendTo($div);
+            $('<h3>Due date</h3>').appendTo($div);
+            $('<input type="text" id="assignmentduedate">').appendTo($div).val(new Date());
+            $('<h3>Pick a problem</h3>').appendTo($div);
+
+            // sort problems by name
+            container.Problems.sort(function (a, b) {
+                if (a.Name < b.Name) return -1;
+                if (a.Name > b.Name) return 1;
+                return 0;
+            });
+
+            $.each(container.Problems, function (i, problem) {
+                var $button = $('<input type="radio" name="problempicker">')
+                    .val(problem.ID);
+                if (asst && asst.Problem == problem.ID)
+                    $button.prop('selected', 'selected');
+                var name = $(' <b />').text(problem.Name);
+                $('<p />').appendTo($div)
+                    .append($button)
+                    .append(name)
+                    .append(' (' + problem.Type + ')' +
+                        ' Tags: ' + problem.Tags.join(' ') +
+                        ' UsedBy: ' + problem.UsedBy.join(' '));
+            });
+
+            var $button = $('<button id="assignmenteditorsavebutton">Save assignment</button>');
+            $button.appendTo($div);
+
+            if (setTab)
+                $('#tabs').tabs('enable', 7).tabs('option', 'active', 7);
+        });
+    };
+
     var buildAssignmentListItem = function (asst, supresseditorlink, supressresultlink) {
         var $item = $('<li />');
 
         // color the item if appropriate
+        var now = new Date();
+        var future = now < new Date(asst.Open);
         if (asst.Passed && asst.ToBeGraded == 0)
             $item.addClass('green');
-        else if (!asst.Active && asst.ToBeGraded == 0)
+        else if (!future && !asst.Active && asst.ToBeGraded == 0)
             $item.addClass('red');
 
         // form line (possibly with link) for assignment name
-        var text = (asst.Active ? 'Open' : 'Past') + ' assignment: “' + asst.Name + '”';
+        var when = 'Open';
+        if (!asst.Active) {
+            when = future ? 'Future' : 'Past';
+        }
+        var text = when + ' assignment: “' + asst.Name + '”';
         var $p = $('<p />').append($('<b />').text(text)).appendTo($item);
         if (asst.Active && !supresseditorlink) {
             var $link = $('<a href="#" class="assignmenteditorlink">go to editor</a>')
@@ -338,7 +496,7 @@
         } else if (asst.Attempts == 0) {
             if (asst.Active)
                 $item.append($('<p />').text('You have not submitted a solution yet'));
-            else
+            else if (!future)
                 $item.append($('<p />').text('FAILED: You did not submit a solution'));
         } else if (asst.Passed) {
             $item.append($('<p />').text('PASSED: Total of ' +
@@ -384,13 +542,13 @@
 
     $('#studentsubmitbutton').live('click', function () {
         var $div = $('#tab-student-assignment');
-        var data = formToJson($div);
+        var data = JSON.stringify(formToJson($div));
         var asstID = $(this).data('assignmentID');
         $('#tab-student-result').data('assignmentID', asstID);
         $.ajax({
             type: 'POST',
             url: '/student/submit/' + asstID,
-            contentType : 'application/json; charset=utf-8',
+            contentType: 'application/json; charset=utf-8',
             data: data,
             success: function (res, status, xhr) {
                 $('#tab-student-assignment').empty();
@@ -404,7 +562,97 @@
                 console.log(res);
             }
         });
-            
+    });
+
+    $('#problemeditorsavebutton').live('click', function () {
+        var $div = $('#tab-instructor-problemeditor');
+        var problemTypeTag = $('#tab-instructor-problemeditor').data('problemTypeTag');
+        var name = $div.find('#problemeditorname').val();
+        var tags = $div.find('#problemeditortags').val().split(/\s+/);
+        if (tags.length > 0 && tags[0] == '')
+            tags.shift();
+        if (tags.length > 0 && tags[tags.length-1] == '')
+            tags.pop();
+
+        var data = formToJson($div);
+        var problemID = $(this).data('problemID');
+        var elt = {
+            Name: name,
+            Type: problemTypeTag,
+            Tags: tags,
+            Data: data
+        };
+        $.ajax({
+            type: 'POST',
+            url: '/problem/' + (problemID ? '/update/' + problemID : 'new'),
+            contentType: 'application/json; charset=utf-8',
+            data: JSON.stringify(elt),
+            success: function (res, status, xhr) {
+                $('#tab-instructor-problemeditor').empty();
+                $('#tabs').tabs('disable', 6).tabs('option', 'active', 4);
+                refreshInstructorSchedule(true);
+            },
+            error: function (res, status, xhr) {
+                console.log('error saving problem');
+                console.log(res);
+            }
+        });
+    });
+
+    $('#newproblembutton').live('click', function () {
+        var $div = $('#tab-instructor-problemeditor');
+        var problemTypeTag = $('#newproblemtypelist').val();
+        $div.data('problemTypeTag', problemTypeTag);
+        $div.data('problemID', undefined);
+        refreshInstructorProblemEditor(true);
+    });
+
+    $('.newassignmentbutton').live('click', function () {
+        var courseTag = $(this).data('courseTag');
+        var $div = $('#tab-instructor-assignmenteditor');
+        $div.data('courseTag', courseTag);
+        refreshInstructorAssignmentEditor(true);
+    });
+
+    $('#assignmenteditorsavebutton').live('click', function () {
+        var $div = $('#tab-instructor-assignmenteditor');
+        var s = $('#assignmentstartdate').val();
+        var start;
+        if (!s) start = new Date(1970, 0, 1);
+        else start = new Date(s);
+        var end = new Date($('#assignmentduedate').val());
+        var courseTag = $div.data('courseTag');
+        var problemID = Number($div.find('input[name=problempicker]:checked').val());
+        var elt = {
+            Problem: problemID,
+            Open: start,
+            Close: end,
+            ForCredit: true
+        };
+        var now = new Date();
+        if (end < now) {
+            alert('Due date must be in the future');
+            return;
+        }
+        if (!problemID) {
+            alert('You must select a problem');
+            return;
+        }
+        $.ajax({
+            type: 'POST',
+            url: '/course/newassignment/' + courseTag,
+            contentType: 'application/json; charset=utf-8',
+            data: JSON.stringify(elt),
+            success: function (res, status, xhr) {
+                $('#tab-instructor-assignmenteditor').empty();
+                $('#tabs').tabs('disable', 7).tabs('option', 'active', 4);
+                refreshInstructorSchedule(true);
+            },
+            error: function (res, status, xhr) {
+                console.log('error saving assignment');
+                console.log(res);
+            }
+        });
     });
 
     //
@@ -419,7 +667,7 @@
         // run through the list of fields
         $.each(fieldList, function (i, field) {
             var action;
-            if (role == 'instructor')
+            if (role == 'creator')
                 action = field.Creator;
             else if (role == 'student')
                 action = field.Student;
@@ -451,7 +699,7 @@
                         // delete the header and append an hrule
                         $elt.find('h2').first().remove();
                         if (action == 'edit')
-                            $elt.append('<button class="close closeparentdiv">&times;</button>');
+                            $elt.prepend('<button class="close closeparentdiv">&times;</button>');
                         $elt.append('<hr>');
                         if ($elt.hasClass('editorelt'))
                             $elt.removeClass('editorelt').addClass('editorlistelt');
@@ -478,7 +726,7 @@
 
     var createEditorField = function (field, value, role) {
         var action;
-        if (role == 'instructor')
+        if (role == 'creator')
             action = field.Creator;
         else if (role == 'student')
             action = field.Student;
@@ -579,9 +827,10 @@
         if ($elt.hasClass('editorelt'))
             $elt.removeClass('editorelt').addClass('editorlistelt');
         $elt.find('h2').first().remove();
-        $elt.append('<button class="close closeparentdiv">&times;</button>');
+        $elt.prepend('<button class="close closeparentdiv">&times;</button>');
         $elt.append('<hr>');
         $elt.insertBefore(this);
+        $('.CodeMirror').each(function () { this.CodeMirror.refresh(); });
         return false;
     });
 
@@ -625,7 +874,7 @@
             });
             o[field.Name] = list;
         });
-        return JSON.stringify(o);
+        return o;
     };
 
     var until = function (when) {
