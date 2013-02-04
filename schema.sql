@@ -13,8 +13,7 @@ create table Instructor (
 
 create table Student (
     Email text primary key not null,
-    Name text not null,
-    CanvasID integer
+    Name text not null
 );
 
 create table Course (

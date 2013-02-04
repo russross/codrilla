@@ -38,7 +38,6 @@ type InstructorDB struct {
 type StudentDB struct {
 	Email                 string
 	Name                  string
-	CanvasID              int64
 	Courses               map[string]*CourseDB
 	SolutionsByAssignment map[int64]*SolutionDB
 }
@@ -145,7 +144,7 @@ func initDatabase() {
 		elt := new(StudentDB)
 		elt.Courses = make(map[string]*CourseDB)
 		elt.SolutionsByAssignment = make(map[int64]*SolutionDB)
-		if err = rows.Scan(&elt.Email, &elt.Name, &elt.CanvasID); err != nil {
+		if err = rows.Scan(&elt.Email, &elt.Name); err != nil {
 			log.Fatalf("DB error scanning Student: %v", err)
 		}
 		studentsByEmail[elt.Email] = elt

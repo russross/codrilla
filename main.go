@@ -6,11 +6,9 @@ import (
 	"database/sql"
 	"encoding/json"
 	"github.com/gorilla/sessions"
-	"github.com/vmihailenco/redis"
 	"io/ioutil"
 	"log"
 	"net/http"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -43,9 +41,6 @@ const scriptPath = "scripts"
 var config Config
 var timeZone *time.Location
 var store sessions.Store
-
-// map from filenames to sha1 hashes of all scripts that are loaded
-var luaScripts = make(map[string]string)
 
 func main() {
 	// load config
@@ -292,33 +287,6 @@ func writeJson(w http.ResponseWriter, r *http.Request, elt interface{}) {
 		log.Printf("Output truncated")
 		http.Error(w, "Output truncated", http.StatusInternalServerError)
 	}
-}
-
-func loadScripts(db *redis.Client, path string) {
-	names, err := filepath.Glob(path + "/*.lua")
-	if err != nil {
-		log.Fatalf("Failed to get list of Lua scripts: %v", err)
-	}
-
-	count := 0
-	for _, name := range names {
-		_, key := filepath.Split(name)
-		key = key[:len(key)-len(".lua")]
-
-		var contents []byte
-		if contents, err = ioutil.ReadFile(name); err != nil {
-			log.Fatalf("Failed to load script %s: %v", name, err)
-		}
-
-		reply := db.ScriptLoad(string(contents))
-		if err := reply.Err(); err != nil {
-			log.Fatalf("Failed to load script %s into redis: %v", name, err)
-		}
-
-		luaScripts[key] = reply.Val()
-		count++
-	}
-	log.Printf("Loaded %d Lua scripts", count)
 }
 
 func checkJsonRequest(w http.ResponseWriter, r *http.Request) bool {
