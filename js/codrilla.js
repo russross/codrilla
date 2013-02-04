@@ -351,6 +351,12 @@
                         $list.append(buildAssignmentListItem(asst));
                     });
                 }
+
+                $('<h4>Update course membership</h4>').appendTo($div);
+                var $ta = $('<textarea class="coursemembership"></textarea>').appendTo($div);
+                var $tb = $('<button class="coursemembershipbutton">Upload course list JSON</button>').appendTo($div);
+                $tb.data('courseTag', course.Tag);
+
             });
             if (setTab)
                 $('#tabs').tabs('enable', 5).tabs('option', 'active', 5);
@@ -650,6 +656,25 @@
             },
             error: function (res, status, xhr) {
                 console.log('error saving assignment');
+                console.log(res);
+            }
+        });
+    });
+
+    $('.coursemembershipbutton').live('click', function () {
+        var courseTag = $(this).data('courseTag');
+        if (!courseTag) return;
+        var data = $(this).prev('.coursemembership').val();
+        $.ajax({
+            type: 'POST',
+            url: '/course/courselistupload/' + courseTag,
+            contentType: 'application/json; charset=utf-8',
+            data: data,
+            success: function (res, status, xhr) {
+                refreshInstructorSchedule(true);
+            },
+            error: function (res, status, xhr) {
+                console.log('error submitting course listing data');
                 console.log(res);
             }
         });
