@@ -31,7 +31,7 @@ type CourseListing struct {
 }
 
 func getCourseListing(course *CourseDB, student *StudentDB) *CourseListing {
-	now := time.Now()
+	now := time.Now().In(timeZone)
 	elt := &CourseListing{
 		Tag:             course.Tag,
 		Name:            course.Name,
@@ -82,7 +82,7 @@ func (p AssignmentsByClose) Less(i, j int) bool { return p[i].Close.Before(p[j].
 func (p AssignmentsByClose) Swap(i, j int)      { p[i], p[j] = p[j], p[i] }
 
 func getAssignmentListing(asst *AssignmentDB, student *StudentDB) *AssignmentListing {
-	now := time.Now()
+	now := time.Now().In(timeZone)
 	elt := &AssignmentListing{
 		ID:        asst.ID,
 		Name:      asst.Problem.Name,
@@ -145,7 +145,7 @@ func student_grades(w http.ResponseWriter, r *http.Request, student *StudentDB) 
 	}
 
 	list := []*AssignmentListing{}
-	now := time.Now()
+	now := time.Now().In(timeZone)
 	for _, asst := range course.Assignments {
 		if !now.Before(asst.Open) {
 			list = append(list, getAssignmentListing(asst, student))
@@ -182,7 +182,7 @@ func student_assignment(w http.ResponseWriter, r *http.Request, student *Student
 	}
 
 	// make sure the assignment is active
-	now := time.Now()
+	now := time.Now().In(timeZone)
 	if now.Before(asst.Open) || now.After(asst.Close) {
 		log.Printf("Assignment is not active: %d", asst.ID)
 		http.Error(w, "Assignment not active", http.StatusForbidden)
@@ -274,7 +274,7 @@ func student_result(w http.ResponseWriter, r *http.Request, student *StudentDB) 
 	course := asst.Course
 
 	// make sure the course is active
-	now := time.Now()
+	now := time.Now().In(timeZone)
 	if now.After(course.Close) {
 		log.Printf("Course is not active: %s", course.Tag)
 		http.Error(w, "Course not active", http.StatusForbidden)
@@ -359,7 +359,7 @@ func student_submit(w http.ResponseWriter, r *http.Request, db *sql.DB, student 
 	}
 
 	// make sure the assignment is active
-	now := time.Now()
+	now := time.Now().In(timeZone)
 	if now.Before(asst.Open) || now.After(asst.Close) {
 		log.Printf("Assignment is not active: %d", assignmentID)
 		http.Error(w, "Assignment not active", http.StatusForbidden)
@@ -446,7 +446,7 @@ func student_submit(w http.ResponseWriter, r *http.Request, db *sql.DB, student 
 		solution.ID,
 		now,
 		submissionJson,
-		nil,
+		"",
 		false)
 	if err != nil {
 		log.Printf("DB insert error on Submission: %v", err)
@@ -465,6 +465,7 @@ func student_submit(w http.ResponseWriter, r *http.Request, db *sql.DB, student 
 	if !solutionPresent {
 		asst.SolutionsByStudent[student.Email] = solution
 		student.SolutionsByAssignment[asst.ID] = solution
+		solutionsByID[solution.ID] = solution
 	}
 
 	// add the submission to memory

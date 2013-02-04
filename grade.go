@@ -67,6 +67,10 @@ func gradeAll() (err error) {
 }
 
 func gradeOne(db *sql.DB) (bool, error) {
+	if len(gradeQueue) == 0 {
+		return false, nil
+	}
+
 	// get an item to grade
 	var id int64
 	for id, _ = range gradeQueue {
@@ -104,15 +108,16 @@ func gradeOne(db *sql.DB) (bool, error) {
 	attempt := solution.SubmissionsInOrder[i]
 
 	log.Printf("Grading solution #%d (%d/%d) of type %s for %s",
-		id, i+1, len(solution.SubmissionsInOrder), problem.Type, solution.Student.Email)
+		id, i+1, len(solution.SubmissionsInOrder), problem.Type.Tag, solution.Student.Email)
 
 	// merge the fields into a single submission record
 	merged := make(map[string]interface{})
 
+	log.Printf("%v\n", problem.Data)
 	for _, field := range problemType.FieldList {
-		if value, present := attempt.Submission[field.Name]; present && field.Student == "edit" && field.Grader == "view" {
+		if value, present := attempt.Submission[field.Name]; present && field.Grader == "view" {
 			merged[field.Name] = value
-		} else if value, present := problem.Data[field.Name]; present && field.Creator == "edit" && field.Grader == "view" {
+		} else if value, present := problem.Data[field.Name]; present && field.Grader == "view" {
 			merged[field.Name] = value
 		}
 	}
@@ -125,6 +130,7 @@ func gradeOne(db *sql.DB) (bool, error) {
 		mutex.RUnlock()
 		return false, err
 	}
+	log.Printf("requestBody:\n%s\n", requestBody)
 
 	// release the read mutex
 	mutex.RUnlock()
@@ -148,7 +154,7 @@ func gradeOne(db *sql.DB) (bool, error) {
 		return false, err
 	}
 	if resp.StatusCode != 200 {
-		log.Printf("gradeOne: error result from request to %s: %v", u.String(), err)
+		log.Printf("gradeOne: error result from request to %s: %s", u.String(), resp.Status)
 		return false, err
 	}
 	defer resp.Body.Close()

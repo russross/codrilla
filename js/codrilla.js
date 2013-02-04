@@ -103,7 +103,7 @@
         if (CODRILLA.Role == 'student')
             setupStudent();
         else if (CODRILLA.Role == 'instructor')
-            setupInstructor();
+            setupStudent();
         else if (CODRILLA.Role == 'admin')
             setupInstructor();
     };
@@ -169,6 +169,7 @@
                         course.NextAssignment.Name + '”')));
                     var $opens = $('<p />').text('Opens ');
                     formatDate($opens, course.NextAssignment.Open);
+                    $item.append($opens);
                     var $due = $('<p />').text('Due ');
                     formatDate($due, course.NextAssignment.Close);
                     $item.append($due);
@@ -253,7 +254,7 @@
             $('.CodeMirror').each(function () { this.CodeMirror.refresh(); });
 
             // schedule a refresh?
-            if (!asst.ResultData || asst.ResultData.length == 0) {
+            if (!asst.ResultData || Object.keys(asst.ResultData).length == 0) {
                 window.setTimeout(refreshStudentResult, 2000);
             }
         });
@@ -301,7 +302,7 @@
 
             // schedule a refresh?
             if (tobegradedcount > 0) {
-                window.setTimeout(refreshStudentGrade, 10000);
+                window.setTimeout(refreshStudentGrade, 2000);
             }
         });
     };
@@ -658,8 +659,8 @@
         if (n < 10) return '0' + n;
         else return String(n);
     };
-    var formatDate = function ($container, unix) {
-        var when = new Date(1000 * unix);
+    var formatDate = function ($container, utc) {
+        var when = new Date(utc);
         var now = new Date();
         var stamp = daysOfWeek[when.getDay()] + ', ' + months[when.getMonth()] + ' ' + when.getDate();
         if (when.getFullYear() != now.getFullYear())
@@ -676,7 +677,7 @@
             if (!when) return;
             $(this).text(until(when));
         });
-    }, 5000);
+    }, 1000);
 
     $('#tabs').tabs();
     if (CODRILLA.LoggedIn) {

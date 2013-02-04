@@ -187,7 +187,7 @@ func problem_save_common(w http.ResponseWriter, r *http.Request, db *sql.DB, ins
 	}
 	problem.Data = filtered
 
-	problemJson, err := json.Marshal(problem)
+	problemJson, err := json.Marshal(problem.Data)
 	if err != nil {
 		log.Printf("JSON encoding error: %v", err)
 		http.Error(w, "JSON encoding error", http.StatusInternalServerError)
@@ -305,6 +305,7 @@ func problem_save_common(w http.ResponseWriter, r *http.Request, db *sql.DB, ins
 			Assignments: make(map[int64]*AssignmentDB),
 			Courses:     make(map[string]*CourseDB),
 		}
+		problemsByID[problem.ID] = p
 	}
 
 	// create tag links

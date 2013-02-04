@@ -314,12 +314,6 @@ func google_verify(code string) (email string, err error) {
 }
 
 func checkSession(session *sessions.Session) (email string, err error) {
-	//session.Values["email"] = "russ@dixie.edu"
-	//session.Values["role"] = "instructor"
-	session.Values["email"] = "jmacdon1@dmail.dixie.edu"
-	session.Values["role"] = "student"
-	session.Values["expires"] = time.Now().Add(time.Hour).Unix()
-
 	// make sure someone is logged in
 	if _, present := session.Values["email"]; !present {
 		log.Printf("Must be logged in")

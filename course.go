@@ -29,7 +29,7 @@ func course_courselistupload(w http.ResponseWriter, r *http.Request, db *sql.DB,
 		return
 	}
 
-	now := time.Now()
+	now := time.Now().In(timeZone)
 	if now.After(course.Close) {
 		log.Printf("Course is closed")
 		http.Error(w, "Course is closed", http.StatusForbidden)
@@ -173,7 +173,7 @@ type CourseListResponseElt struct {
 
 func course_list(w http.ResponseWriter, r *http.Request, instructor *InstructorDB) {
 	resp := []*CourseListResponseElt{}
-	now := time.Now()
+	now := time.Now().In(timeZone)
 
 	// get list of active course names in sorted order
 	courses := []string{}
@@ -233,8 +233,8 @@ func course_list(w http.ResponseWriter, r *http.Request, instructor *InstructorD
 
 type NewAssignment struct {
 	Problem   int64
-	Open      int64
-	Close     int64
+	Open      time.Time
+	Close     time.Time
 	ForCredit bool
 }
 
@@ -247,7 +247,7 @@ func course_newassignment(w http.ResponseWriter, r *http.Request, db *sql.DB, in
 		return
 	}
 
-	now := time.Now()
+	now := time.Now().In(timeZone)
 	if now.After(course.Close) {
 		log.Printf("Course %s is closed", courseTag)
 		http.Error(w, "Course is closed", http.StatusForbidden)
@@ -270,21 +270,19 @@ func course_newassignment(w http.ResponseWriter, r *http.Request, db *sql.DB, in
 	}
 
 	// if the open time is missing, use now
-	open := now
-	if asst.Open > 0 {
-		open = time.Unix(asst.Open, 0)
+	if asst.Open.IsZero() || asst.Open.Year() < 2000 {
+		asst.Open = now
 	}
 
 	// it must not open in the past
-	if now.After(open) {
+	if now.After(asst.Open) && !now.Equal(asst.Open) {
 		log.Printf("Open time must be in the future")
 		http.Error(w, "Open time must be in the future", http.StatusBadRequest)
 		return
 	}
 
 	// it must not close in the past, or before it opens
-	closeTime := time.Unix(asst.Close, 0)
-	if now.After(closeTime) || closeTime.Before(open) {
+	if now.After(asst.Close) || asst.Close.Before(asst.Open) {
 		log.Printf("Must close in the future after opening")
 		http.Error(w, "Close time must be in the future and after open time", http.StatusBadRequest)
 		return
@@ -295,8 +293,8 @@ func course_newassignment(w http.ResponseWriter, r *http.Request, db *sql.DB, in
 		course.Tag,
 		problem.ID,
 		asst.ForCredit,
-		open,
-		closeTime)
+		asst.Open,
+		asst.Close)
 	if err != nil {
 		log.Printf("DB error inserting new Assignment: %v", err)
 		http.Error(w, "DB error", http.StatusInternalServerError)
@@ -315,8 +313,8 @@ func course_newassignment(w http.ResponseWriter, r *http.Request, db *sql.DB, in
 		Course:             course,
 		Problem:            problem,
 		ForCredit:          asst.ForCredit,
-		Open:               open,
-		Close:              closeTime,
+		Open:               asst.Open,
+		Close:              asst.Close,
 		SolutionsByStudent: make(map[string]*SolutionDB),
 	}
 	assignmentsByID[id] = elt
@@ -348,7 +346,7 @@ func course_grades(w http.ResponseWriter, r *http.Request, instructor *Instructo
 	sort.Strings(order)
 
 	// process each student
-	now := time.Now()
+	now := time.Now().In(timeZone)
 	for _, email := range order {
 		student := course.Students[email]
 		elt := &CourseGradesResponseElt{

@@ -19,7 +19,7 @@ create table Student (
 create table Course (
     Tag text primary key not null,
     Name text not null,
-    Close integer not null
+    Close timestamp not null
 );
 
 create table CourseInstructor (
@@ -67,8 +67,8 @@ create table Assignment (
     Course text not null,
     Problem integer not null,
     ForCredit integer not null,
-    Open integer not null,
-    Close integer not null,
+    Open timestamp not null,
+    Close timestamp not null,
 
     foreign key (Course) references Course (Tag),
     foreign key (Problem) references Problem (ID)
@@ -85,9 +85,9 @@ create table Solution (
 
 create table Submission (
     Solution integer not null,
-    TimeStamp integer not null,
+    TimeStamp timestamp not null,
     Submission text not null,
-    GradeReport text,
+    GradeReport text not null,
     Passed integer,
 
     primary key (Solution, TimeStamp),

@@ -173,8 +173,8 @@ Courses
 
     Returns a list of students with grades. Each contains:
 
-    *   Name: student name
     *   Email: student email
+    *   Name: student name
     *   Assignments: a list of assignments. The list is the same as
         for the student grade report. Each element contains the
         generic and student-specific report for assignments that are
