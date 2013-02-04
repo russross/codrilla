@@ -90,7 +90,7 @@ func main() {
 	defer pool.Close()
 
 	// load problem types
-	setupProblemTypes(pool)
+	setupProblemTypes()
 
 	// load lua scripts
 	loadScripts(pool, scriptPath)
@@ -162,6 +162,87 @@ func (h handlerAdmin) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	h(w, r, pool, session)
 }
 
+type handlerInstructorSQL func(http.ResponseWriter, *http.Request, *InstructorDB)
+
+func (h handlerInstructorSQL) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	log.Printf("%s %s", r.Method, r.URL.Path)
+
+	// get the session (or create a new one)
+	session, _ := store.Get(r, "codrilla-session")
+
+	// verify that the user is logged in
+	if err := checkSession(pool, session); err != nil {
+		http.Error(w, err.Error(), http.StatusForbidden)
+		return
+	}
+
+	// get a read lock
+	mutex.RLock()
+	defer mutex.RUnlock()
+
+	email := session.Values["email"].(string)
+	instructor, present := instructorsByEmail[email]
+	if !present {
+		log.Printf("InstructorDB not found: %s", email)
+		http.Error(w, "Instructor record not found", http.StatusNotFound)
+		return
+	}
+
+	// check that the user is logged in as an instructor or admin
+	if session.Values["role"] != "admin" && session.Values["role"] != "instructor" {
+		log.Printf("Call to %s by non-instructor", r.URL.Path)
+		http.Error(w, "Must be logged in as an instructor", http.StatusForbidden)
+		return
+	}
+
+	// call the handler
+	h(w, r, instructor)
+}
+
+type handlerInstructorJsonSQLRW func(http.ResponseWriter, *http.Request, *sql.DB, *InstructorDB, *json.Decoder)
+
+func (h handlerInstructorJsonSQLRW) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	log.Printf("%s %s", r.Method, r.URL.Path)
+
+	// get the session (or create a new one)
+	session, _ := store.Get(r, "codrilla-session")
+
+	// verify that the user is logged in
+	if err := checkSession(pool, session); err != nil {
+		http.Error(w, err.Error(), http.StatusForbidden)
+		return
+	}
+
+	if !checkJsonRequest(w, r) {
+		return
+	}
+
+	// get a read/write lock
+	mutex.Lock()
+	defer mutex.Unlock()
+
+	email := session.Values["email"].(string)
+	instructor, present := instructorsByEmail[email]
+	if !present {
+		log.Printf("InstructorDB not found: %s", email)
+		http.Error(w, "Instructor record not found", http.StatusNotFound)
+		return
+	}
+
+	// check that the user is logged in as an instructor or admin
+	if session.Values["role"] != "admin" && session.Values["role"] != "instructor" {
+		log.Printf("Call to %s by non-instructor", r.URL.Path)
+		http.Error(w, "Must be logged in as an instructor", http.StatusForbidden)
+		return
+	}
+
+	decoder := json.NewDecoder(r.Body)
+	defer r.Body.Close()
+
+	// call the handler
+	h(w, r, database, instructor, decoder)
+}
+
 type handlerInstructor func(http.ResponseWriter, *http.Request, *redis.Client, *sessions.Session)
 
 func (h handlerInstructor) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -229,7 +310,7 @@ func (h handlerInstructorJson) ServeHTTP(w http.ResponseWriter, r *http.Request)
 	h(w, r, pool, session, decoder)
 }
 
-type handlerStudentSQL func(http.ResponseWriter, *http.Request, *StudentDB, *sessions.Session)
+type handlerStudentSQL func(http.ResponseWriter, *http.Request, *StudentDB)
 
 func (h handlerStudentSQL) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	log.Printf("%s %s", r.Method, r.URL.Path)
@@ -255,7 +336,7 @@ func (h handlerStudentSQL) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h(w, r, student, session)
+	h(w, r, student)
 }
 
 type handlerStudentJsonSQLRW func(http.ResponseWriter, *http.Request, *sql.DB, *StudentDB, *json.Decoder)

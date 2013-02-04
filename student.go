@@ -4,7 +4,6 @@ import (
 	"database/sql"
 	"encoding/json"
 	"github.com/gorilla/pat"
-	"github.com/gorilla/sessions"
 	"log"
 	"net/http"
 	"sort"
@@ -110,7 +109,7 @@ type StudentCoursesResponse struct {
 	Courses []*CourseListing
 }
 
-func student_courses(w http.ResponseWriter, r *http.Request, student *StudentDB, session *sessions.Session) {
+func student_courses(w http.ResponseWriter, r *http.Request, student *StudentDB) {
 	resp := &StudentCoursesResponse{
 		Email:   student.Email,
 		Name:    student.Name,
@@ -129,7 +128,7 @@ func student_courses(w http.ResponseWriter, r *http.Request, student *StudentDB,
 }
 
 // get a list of assignments for this student with grade info
-func student_grades(w http.ResponseWriter, r *http.Request, student *StudentDB, session *sessions.Session) {
+func student_grades(w http.ResponseWriter, r *http.Request, student *StudentDB) {
 	courseTag := r.URL.Query().Get(":coursetag")
 
 	course, present := student.Courses[courseTag]
@@ -160,7 +159,7 @@ type StudentAssignmentResponse struct {
 	Attempt     map[string]interface{}
 }
 
-func student_assignment(w http.ResponseWriter, r *http.Request, student *StudentDB, session *sessions.Session) {
+func student_assignment(w http.ResponseWriter, r *http.Request, student *StudentDB) {
 	id, err := strconv.ParseInt(r.URL.Query().Get(":id"), 10, 64)
 	if err != nil {
 		log.Printf("Bad ID: %s", r.URL.Query().Get(":id"))
@@ -203,14 +202,7 @@ func student_assignment(w http.ResponseWriter, r *http.Request, student *Student
 
 	// get the problem
 	problem := asst.Problem
-
-	// make sure we still know about this problem type
-	problemType, present := problemTypes[problem.Type]
-	if !present {
-		log.Printf("Problem %d has unknown type %s", problem.ID, problem.Type)
-		http.Error(w, "Unknown problem type", http.StatusInternalServerError)
-		return
-	}
+	problemType := problem.Type
 
 	// filter problem fields down to what the student is allowed to see
 	data := make(map[string]interface{})
@@ -249,7 +241,7 @@ type StudentGraderReportResult struct {
 	ResultData  map[string]interface{}
 }
 
-func student_result(w http.ResponseWriter, r *http.Request, student *StudentDB, session *sessions.Session) {
+func student_result(w http.ResponseWriter, r *http.Request, student *StudentDB) {
 	id, err := strconv.ParseInt(r.URL.Query().Get(":id"), 10, 64)
 	if err != nil {
 		log.Printf("Bad ID: %s", r.URL.Query().Get(":id"))
@@ -292,14 +284,7 @@ func student_result(w http.ResponseWriter, r *http.Request, student *StudentDB, 
 
 	// get the problem
 	problem := asst.Problem
-
-	// make sure we still know about this problem type
-	problemType, present := problemTypes[problem.Type]
-	if !present {
-		log.Printf("Problem %d has unknown type %s", problem.ID, problem.Type)
-		http.Error(w, "Unknown problem type", http.StatusInternalServerError)
-		return
-	}
+	problemType := problem.Type
 
 	// filter problem fields down to what the student is allowed to see
 	data := make(map[string]interface{})
@@ -376,12 +361,7 @@ func student_submit(w http.ResponseWriter, r *http.Request, db *sql.DB, student 
 	}
 
 	// get the problem type description
-	problemType, present := problemTypes[asst.Problem.Type]
-	if !present {
-		log.Printf("Problem type is unknown: %s", asst.Problem.Type)
-		http.Error(w, "Unknown problem type", http.StatusInternalServerError)
-		return
-	}
+	problemType := asst.Problem.Type
 
 	// filter it down to expected student fields
 	filtered := make(map[string]interface{})

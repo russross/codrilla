@@ -1,13 +1,13 @@
 package main
 
 import (
+	"database/sql"
 	"encoding/json"
 	"github.com/gorilla/pat"
-	"github.com/gorilla/sessions"
-	"github.com/vmihailenco/redis"
 	"log"
 	"net/http"
 	"net/url"
+	"sort"
 	"strconv"
 	"strings"
 	"unicode"
@@ -17,12 +17,12 @@ var problemTypes map[string]*ProblemType
 
 func init() {
 	r := pat.New()
-	r.Add("GET", `/problem/types`, handlerInstructor(problem_types))
-	r.Add("GET", `/problem/type/{tag:[\w:]+$}`, handlerInstructor(problem_type))
-	r.Add("POST", `/problem/new`, handlerInstructorJson(problem_new))
-	r.Add("POST", `/problem/update/{id:\d+$}`, handlerInstructorJson(problem_update))
-	r.Add("GET", `/problem/get/{id:\d+$}`, handlerInstructor(problem_get))
-	r.Add("GET", `/problem/tags`, handlerInstructor(problem_tags))
+	r.Add("GET", `/problem/types`, handlerInstructorSQL(problem_types))
+	r.Add("GET", `/problem/type/{tag:[\w:]+$}`, handlerInstructorSQL(problem_type))
+	r.Add("GET", `/problem/get/{id:\d+$}`, handlerInstructorSQL(problem_get))
+	r.Add("GET", `/problem/tags`, handlerInstructorSQL(problem_tags))
+	r.Add("POST", `/problem/new`, handlerInstructorJsonSQLRW(problem_new))
+	r.Add("POST", `/problem/update/{id:\d+$}`, handlerInstructorJsonSQLRW(problem_update))
 	http.Handle("/problem/", r)
 }
 
@@ -57,7 +57,7 @@ type ProblemType struct {
 	FieldList []ProblemField
 }
 
-func setupProblemTypes(db *redis.Client) {
+func setupProblemTypes() {
 	// first get the list of problem types from the grader
 	u := &url.URL{
 		Scheme: "http",
@@ -88,73 +88,19 @@ func setupProblemTypes(db *redis.Client) {
 		log.Printf("Adding %s problem type", elt.Tag)
 		problemTypes[elt.Tag] = elt
 	}
-
-	// store it in redis, too
-
-	if i := db.Del("problem:types"); i.Err() != nil {
-		log.Fatalf("DB error deleting problem type hash: %v", i.Err())
-	}
-
-	for _, elt := range list {
-		raw, err := json.Marshal(elt)
-		if err != nil {
-			log.Fatalf("Error re-encoding problem type description for %s: %v", elt.Tag, err)
-		}
-		if b := db.HSet("problem:types", elt.Tag, string(raw)); b.Err() != nil {
-			log.Fatalf("DB error adding %s problem type: %v", elt.Tag, b.Err())
-		}
-	}
 }
 
-func problem_types(w http.ResponseWriter, r *http.Request, db *redis.Client, session *sessions.Session) {
-	// get the list of types from the database
-	slice := db.HGetAll("problem:types")
-	if slice.Err() != nil {
-		log.Printf("DB error getting list of problem types: %v", slice.Err())
-		http.Error(w, "DB error", http.StatusInternalServerError)
-		return
-	}
-
-	lst := slice.Val()
-	types := make(map[string]*ProblemType)
-	for i := 0; i < len(lst); i += 2 {
-		tag, raw := lst[i], lst[i+1]
-
-		// parse JSON data
-		problemType := new(ProblemType)
-		if err := json.Unmarshal([]byte(raw), problemType); err != nil {
-			log.Printf("Unable to parse JSON type description: %v", err)
-			http.Error(w, "DB error", http.StatusInternalServerError)
-			return
-		}
-
-		types[tag] = problemType
-	}
-
-	writeJson(w, r, types)
+func problem_types(w http.ResponseWriter, r *http.Request, instructor *InstructorDB) {
+	writeJson(w, r, problemTypes)
 }
 
-func problem_type(w http.ResponseWriter, r *http.Request, db *redis.Client, session *sessions.Session) {
+func problem_type(w http.ResponseWriter, r *http.Request, instructor *InstructorDB) {
 	tag := r.URL.Query().Get(":tag")
 
-	// get the field list in JSON form
-	str := db.HGet("problem:types", tag)
-	if str.Err() != nil {
-		log.Printf("DB error getting type description for %s: %v", tag, str.Err())
-		http.Error(w, "DB error", http.StatusInternalServerError)
-		return
-	}
-	s := str.Val()
-	if len(s) == 0 {
-		http.Error(w, "Not found", http.StatusNotFound)
-		return
-	}
-
-	// parse JSON data
-	problemType := new(ProblemType)
-	if err := json.Unmarshal([]byte(s), problemType); err != nil {
-		log.Printf("Unable to parse JSON response from DB: %v", err)
-		http.Error(w, "DB error", http.StatusInternalServerError)
+	problemType, present := problemTypes[tag]
+	if !present {
+		log.Printf("Problem type %s not found", tag)
+		http.Error(w, "Problem type not found", http.StatusNotFound)
 		return
 	}
 
@@ -169,43 +115,33 @@ type Problem struct {
 	Data map[string]interface{}
 }
 
-func problem_new(w http.ResponseWriter, r *http.Request, db *redis.Client, session *sessions.Session, decoder *json.Decoder) {
-	problem_save_common(w, r, db, session, decoder, 0)
+func problem_new(w http.ResponseWriter, r *http.Request, db *sql.DB, instructor *InstructorDB, decoder *json.Decoder) {
+	problem_save_common(w, r, db, instructor, decoder, -1)
 }
 
-func problem_update(w http.ResponseWriter, r *http.Request, db *redis.Client, session *sessions.Session, decoder *json.Decoder) {
-	id := r.URL.Query().Get(":id")
-	if id == "" {
-		log.Printf("Missing ID")
-		http.Error(w, "Missing ID", http.StatusBadRequest)
-		return
-	}
-	n, err := strconv.ParseInt(id, 10, 64)
+func problem_update(w http.ResponseWriter, r *http.Request, db *sql.DB, instructor *InstructorDB, decoder *json.Decoder) {
+	id, err := strconv.ParseInt(r.URL.Query().Get(":id"), 10, 64)
 	if err != nil {
-		log.Printf("Error parsing ID [%s]: %v", id, err)
-		http.Error(w, "Invalid ID", http.StatusBadRequest)
+		log.Printf("Bad ID %s: %v", r.URL.Query().Get(":id"), err)
+		http.Error(w, "Not found", http.StatusNotFound)
 		return
 	}
-	if n < 1 {
-		log.Printf("Invalid ID < 0 [%s]", id)
-		http.Error(w, "Invalid ID", http.StatusBadRequest)
+	if id < 0 {
+		log.Printf("Invalid ID: %d", id)
+		http.Error(w, "Not found", http.StatusNotFound)
 		return
 	}
 
-	problem_save_common(w, r, db, session, decoder, n)
+	problem_save_common(w, r, db, instructor, decoder, id)
 }
 
-func problem_save_common(w http.ResponseWriter, r *http.Request, db *redis.Client, session *sessions.Session, decoder *json.Decoder, id int64) {
-	instructor := session.Values["email"].(string)
-
+func problem_save_common(w http.ResponseWriter, r *http.Request, db *sql.DB, instructor *InstructorDB, decoder *json.Decoder, id int64) {
 	problem := new(Problem)
 	if err := decoder.Decode(problem); err != nil {
 		log.Printf("Failure decoding JSON request: %v", err)
 		http.Error(w, "Failure decoding JSON request", http.StatusBadRequest)
 		return
 	}
-
-	problem.ID = id
 
 	// make sure it has a name
 	problem.Name = strings.TrimSpace(problem.Name)
@@ -230,24 +166,10 @@ func problem_save_common(w http.ResponseWriter, r *http.Request, db *redis.Clien
 	}
 
 	// must be a recognized problem type
-	str := db.HGet("problem:types", problem.Type)
-	if str.Err() != nil {
-		log.Printf("DB error getting type description for %s: %v", problem.Type, str.Err())
-		http.Error(w, "DB error", http.StatusInternalServerError)
-		return
-	}
-	s := str.Val()
-	if len(s) == 0 {
+	problemType, present := problemTypes[problem.Type]
+	if !present {
 		log.Printf("Problem has unrecognized type: %s", problem.Type)
 		http.Error(w, "Unknown problem type", http.StatusBadRequest)
-		return
-	}
-
-	// parse JSON data describing problem type
-	problemType := new(ProblemType)
-	if err := json.Unmarshal([]byte(s), problemType); err != nil {
-		log.Printf("Unable to parse JSON response from DB: %v", err)
-		http.Error(w, "DB error", http.StatusInternalServerError)
 		return
 	}
 
@@ -272,77 +194,265 @@ func problem_save_common(w http.ResponseWriter, r *http.Request, db *redis.Clien
 		return
 	}
 
-	// store the new problem in the database
-	iface := db.EvalSha(luaScripts["saveproblem"], []string{}, []string{
-		instructor,
-		string(problemJson),
-	})
-	if iface.Err() != nil {
-		log.Printf("DB error saving problem: %v", iface.Err())
-		http.Error(w, "DB error", http.StatusInternalServerError)
-		return
+	// make sure the problem exists (if an update)
+	if id >= 0 {
+		if _, present := problemsByID[id]; !present {
+			log.Printf("Problem %d does not exist", id)
+			http.Error(w, "Problem not found", http.StatusNotFound)
+			return
+		}
 	}
-	newproblem := iface.Val().(string)
 
-	// decode the problem object
-	final := new(Problem)
-	if err := json.Unmarshal([]byte(newproblem), final); err != nil {
-		log.Printf("Unable to parse JSON response from DB: %v", err)
+	// store the new problem in the database
+	txn, err := db.Begin()
+	if err != nil {
+		log.Printf("DB error starting transaction: %v", err)
 		http.Error(w, "DB error", http.StatusInternalServerError)
 		return
 	}
+	defer txn.Rollback()
+
+	if id >= 0 {
+		// update in place
+		_, err := txn.Exec("update Problem set Name = ?, Type = ?, Data = ? where ID = ?",
+			problem.Name,
+			problem.Type,
+			problemJson,
+			id)
+		if err != nil {
+			log.Printf("DB error updating Problem %d: %v", id, err)
+			http.Error(w, "DB error", http.StatusInternalServerError)
+			return
+		}
+		problem.ID = id
+	} else {
+		// create new
+		result, err := txn.Exec("insert into Problem values (null, ?, ?, ?)",
+			problem.Name,
+			problem.Type,
+			problemJson)
+		if err != nil {
+			log.Printf("DB error inserting Problem: %v", err)
+			http.Error(w, "DB error", http.StatusInternalServerError)
+			return
+		}
+		newid, err := result.LastInsertId()
+		if err != nil {
+			log.Printf("DB error getting ID of newly inserted Problem: %v", err)
+			http.Error(w, "DB error", http.StatusInternalServerError)
+			return
+		}
+		problem.ID = newid
+	}
+
+	// update tags
+	if id >= 0 {
+		// delete old tags
+		_, err := txn.Exec("delete from ProblemTag where Problem = ?", id)
+		if err != nil {
+			log.Printf("DB error clearing old tags for problem %d: %v", id, err)
+			http.Error(w, "DB error", http.StatusInternalServerError)
+			return
+		}
+	}
+
+	// insert tag links
+	for _, tag := range problem.Tags {
+		if _, present := tagsByTag[tag]; !present {
+			_, err := txn.Exec("insert into Tag values (?, ?, ?)", tag, tag, 0)
+			if err != nil {
+				log.Printf("DB error inserting Tag %s: %v", tag, err)
+				http.Error(w, "DB error", http.StatusInternalServerError)
+				return
+			}
+		}
+		_, err := txn.Exec("insert into ProblemTag values (?, ?)", problem.ID, tag)
+		if err != nil {
+			log.Printf("DB error inserting ProblemTag problem %d tag %s: %v", problem.ID, tag, err)
+			http.Error(w, "DB error", http.StatusInternalServerError)
+			return
+		}
+	}
+
+	if err = txn.Commit(); err != nil {
+		log.Printf("DB error committing: %v", err)
+		http.Error(w, "DB error", http.StatusInternalServerError)
+		return
+	}
+
+	// update in-memory version
+	var p *ProblemDB
+	if id >= 0 {
+		// update in place
+		p = problemsByID[id]
+		p.Name = problem.Name
+		p.Type = problemType
+		p.Data = problem.Data
+
+		// delete old tag links
+		for _, tag := range p.Tags {
+			delete(p.Tags, tag.Tag)
+			delete(tag.Problems, id)
+		}
+	} else {
+		// create new
+		p = &ProblemDB{
+			ID:          problem.ID,
+			Name:        problem.Name,
+			Type:        problemType,
+			Data:        problem.Data,
+			Tags:        make(map[string]*TagDB),
+			Assignments: make(map[int64]*AssignmentDB),
+			Courses:     make(map[string]*CourseDB),
+		}
+	}
+
+	// create tag links
+	for _, tagName := range problem.Tags {
+		tag, present := tagsByTag[tagName]
+		if !present {
+			// create a new tag
+			tag = &TagDB{
+				Tag:         tagName,
+				Description: tagName,
+				Priority:    0,
+				Problems:    make(map[int64]*ProblemDB),
+			}
+			tagsByTag[tagName] = tag
+		}
+		tag.Problems[problem.ID] = p
+		p.Tags[tagName] = tag
+	}
+
+	// return the final problem, complete with new ID (if applicable)
+	final := getProblem(p)
 
 	writeJson(w, r, final)
 }
 
-func problem_get(w http.ResponseWriter, r *http.Request, db *redis.Client, session *sessions.Session) {
-	id := r.URL.Query().Get(":id")
+type ProblemGetResponse struct {
+	ID   int64
+	Name string
+	Type string
+	Tags []string
+	Data map[string]interface{}
+}
 
-	b := db.SIsMember("index:problems:all", id)
-	if b.Err() != nil {
-		log.Printf("DB error checking if problem exists: %v", b.Err())
-		http.Error(w, "DB error", http.StatusInternalServerError)
-		return
+func getProblem(problem *ProblemDB) *ProblemGetResponse {
+	// assemble and sort list of tags
+	tags := []string{}
+	for tag, _ := range problem.Tags {
+		tags = append(tags, tag)
 	}
-	if !b.Val() {
-		log.Printf("Problem [%s] not found", id)
+	sort.Strings(tags)
+
+	resp := &ProblemGetResponse{
+		ID:   problem.ID,
+		Name: problem.Name,
+		Type: problem.Type.Tag,
+		Tags: tags,
+		Data: problem.Data,
+	}
+
+	return resp
+}
+
+func problem_get(w http.ResponseWriter, r *http.Request, instructor *InstructorDB) {
+	id, err := strconv.ParseInt(r.URL.Query().Get(":id"), 10, 64)
+	if err != nil {
+		log.Printf("Parse error for ID %s: %v", r.URL.Query().Get(":id"), err)
 		http.Error(w, "Not found", http.StatusNotFound)
 		return
 	}
 
-	iface := db.EvalSha(luaScripts["problemget"], []string{}, []string{id})
-	if iface.Err() != nil {
-		log.Printf("DB error getting problem: %v", iface.Err())
-		http.Error(w, "DB error", http.StatusInternalServerError)
+	// look up the problem
+	problem, present := problemsByID[id]
+	if !present {
+		log.Printf("Problem %d not found", id)
+		http.Error(w, "Not found", http.StatusNotFound)
 		return
 	}
-	raw := iface.Val().(string)
+	resp := getProblem(problem)
 
-	// decode the problem object
-	problem := new(Problem)
-	if err := json.Unmarshal([]byte(raw), problem); err != nil {
-		log.Printf("Unable to parse JSON response from DB: %v", err)
-		http.Error(w, "DB error", http.StatusInternalServerError)
-		return
-	}
-
-	writeJson(w, r, problem)
+	writeJson(w, r, resp)
 }
 
-func problem_tags(w http.ResponseWriter, r *http.Request, db *redis.Client, session *sessions.Session) {
-	iface := db.EvalSha(luaScripts["problemtags"], nil, []string{})
-	if iface.Err() != nil {
-		log.Printf("DB error getting tags listing: %v", iface.Err())
-		http.Error(w, "DB error", http.StatusInternalServerError)
-		return
+type ProblemTagsResponse struct {
+	Tags     []*TagListing
+	Problems []*ProblemListing
+}
+
+type TagListing struct {
+	Tag         string
+	Description string
+	Priority    int64
+	Problems    []int64
+}
+
+type ProblemListing struct {
+	ID     int64
+	Name   string
+	Type   string
+	Tags   []string
+	UsedBy []string
+}
+
+type TagsByPriority []*TagListing
+
+func (p TagsByPriority) Len() int           { return len(p) }
+func (p TagsByPriority) Less(i, j int) bool { return p[i].Priority < p[j].Priority }
+func (p TagsByPriority) Swap(i, j int)      { p[i], p[j] = p[j], p[i] }
+
+type Int64Slice []int64
+
+func (p Int64Slice) Len() int           { return len(p) }
+func (p Int64Slice) Less(i, j int) bool { return p[i] < p[j] }
+func (p Int64Slice) Swap(i, j int)      { p[i], p[j] = p[j], p[i] }
+
+func problem_tags(w http.ResponseWriter, r *http.Request, instructor *InstructorDB) {
+	resp := &ProblemTagsResponse{
+		Tags:     []*TagListing{},
+		Problems: []*ProblemListing{},
 	}
 
-	var response interface{}
-	if err := json.Unmarshal([]byte(iface.Val().(string)), &response); err != nil {
-		log.Printf("Unable to parse JSON response from DB: %v", err)
-		http.Error(w, "DB error", http.StatusInternalServerError)
-		return
+	// gather tags
+	for _, tag := range tagsByTag {
+		problems := []int64{}
+		for id, _ := range tag.Problems {
+			problems = append(problems, id)
+		}
+		sort.Sort(Int64Slice(problems))
+		elt := &TagListing{
+			Tag:         tag.Tag,
+			Description: tag.Description,
+			Priority:    tag.Priority,
+			Problems:    problems,
+		}
+		resp.Tags = append(resp.Tags, elt)
+	}
+	sort.Sort(TagsByPriority(resp.Tags))
+
+	// gather problems
+	for _, problem := range problemsByID {
+		tags := []string{}
+		for tag, _ := range problem.Tags {
+			tags = append(tags, tag)
+		}
+		sort.Strings(tags)
+		usedby := []string{}
+		for course, _ := range problem.Courses {
+			usedby = append(usedby, course)
+		}
+		sort.Strings(usedby)
+		elt := &ProblemListing{
+			ID:     problem.ID,
+			Name:   problem.Name,
+			Type:   problem.Type.Tag,
+			Tags:   tags,
+			UsedBy: usedby,
+		}
+		resp.Problems = append(resp.Problems, elt)
 	}
 
-	writeJson(w, r, response)
+	writeJson(w, r, resp)
 }

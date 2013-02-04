@@ -86,13 +86,7 @@ func gradeOne(db *sql.DB) (bool, error) {
 	// get the problem type
 	asst := solution.Assignment
 	problem := asst.Problem
-	problemType, present := problemTypes[problem.Type]
-	if !present {
-		log.Printf("gradeOne: unknown problem type %s found for solution %d", problem.Type, id)
-		delete(gradeQueue, id)
-		mutex.RUnlock()
-		return false, fmt.Errorf("unknown problem type")
-	}
+	problemType := problem.Type
 
 	// find the first ungraded submission
 	var i int

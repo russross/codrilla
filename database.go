@@ -56,7 +56,7 @@ type CourseDB struct {
 type ProblemDB struct {
 	ID          int64
 	Name        string
-	Type        string
+	Type        *ProblemType
 	Data        map[string]interface{}
 	Tags        map[string]*TagDB
 	Assignments map[int64]*AssignmentDB
@@ -209,10 +209,16 @@ func initDatabase() {
 		elt.Tags = make(map[string]*TagDB)
 		elt.Assignments = make(map[int64]*AssignmentDB)
 		elt.Courses = make(map[string]*CourseDB)
+		var typename string
 		var dataJson string
-		if err = rows.Scan(&elt.ID, &elt.Name, &elt.Type, &dataJson); err != nil {
+		if err = rows.Scan(&elt.ID, &elt.Name, &typename, &dataJson); err != nil {
 			log.Fatalf("DB error scanning Problem: %v", err)
 		}
+		problemType, present := problemTypes[typename]
+		if !present {
+			log.Fatalf("Problem %d found with unknown type %s", elt.ID, typename)
+		}
+		elt.Type = problemType
 		if err = json.Unmarshal([]byte(dataJson), &elt.Data); err != nil {
 			log.Fatalf("JSON error in Problem Data for Problem %d: %v", elt.ID, err)
 		}

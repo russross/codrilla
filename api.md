@@ -221,26 +221,6 @@ Problems
     Returns a description of the problem type named by TAG. Format
     is same as for listtypes.
 
-*   Create a new problem (instructor)
-
-        POST /problem/new
-
-    Create a new problem (not an assignment), with the following
-    data:
-
-    *   Name: a human-readable name for this problem
-    *   Type: the evaluation type of the problem
-    *   Tags: a list of tags to help with finding this problem later
-    *   Data: contents of the problem
-
-    Returns the newly-created problem object.
-
-*   Save changes to a problem
-
-        POST /problem/update/ID
-
-    Same as for /problem/create, but updates an existing problem
-
 *   Load a problem for preview/editing (instructor)
 
         GET /problem/get/ID
@@ -271,4 +251,24 @@ Problems
     *   Tags: a list of all tags for this problem
     *   UsedBy: a list of courses that have used/are using this
         (list of course tags)
+
+*   Create a new problem (instructor)
+
+        POST /problem/new
+
+    Create a new problem (not an assignment), with the following
+    data:
+
+    *   Name: a human-readable name for this problem
+    *   Type: the evaluation type of the problem
+    *   Tags: a list of tags to help with finding this problem later
+    *   Data: contents of the problem
+
+    Returns the newly-created problem object.
+
+*   Save changes to a problem
+
+        POST /problem/update/ID
+
+    Same as for /problem/create, but updates an existing problem
 
