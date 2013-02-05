@@ -665,7 +665,7 @@
     $('.coursemembershipbutton').live('click', function () {
         var courseTag = $(this).data('courseTag');
         if (!courseTag) return;
-        var data = $(this).prev('.coursemembership').val();
+        var data = $(this).prev().prev('.coursemembership').val();
         $.ajax({
             type: 'POST',
             url: '/course/courselistupload/' + courseTag,
