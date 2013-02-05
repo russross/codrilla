@@ -1,12 +1,99 @@
 li.green {
   color: green;
 }
+
 li.red {
   color: red;
 }
+
 .ui-tabs .ui-state-disabled { 
   display: none;
 }
+
 input[type=text] {
   width: 50em;
+}
+
+body {
+  font-family:"Palatino Linotype", "Book Antiqua", Palatino, Georgia, serif;
+  letter-spacing:.05em;
+  line-height:1.3em;
+  font-size:12pt;
+  margin:25px;
+}
+
+code {
+  padding: 0 2px;
+  border: 1px solid #dddddd;
+  font-size:11pt;
+  font-family: "Courier New", Courier, monospace;
+  letter-spacing:0.00em;
+  line-height:1em;
+}
+
+pre {
+  line-height: 1.25;
+  padding: .5em;
+  border: 1px solid #dddddd;
+  background: #ffffdd;
+}
+
+pre code {
+  line-height: 1.25;
+  padding: 0;
+  border: none;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  line-height: 1;
+  font-weight: bold;
+  margin-top: 1.25em;
+}
+
+h1,h3,h5{
+  color: #003366;
+}
+
+h2, h4, h6 {
+  color: #aa0000;
+}
+
+h1 { font-size: 200%; }
+h2 { font-size: 175%; }
+h3 { font-size: 150%; }
+h4 { font-size: 125%; }
+h5 { font-size: 115%; }
+h6 { font-size: 110%; }
+
+h1:first-child { margin-top: 0 }
+
+table {
+  width: 100%;
+  border: 1px solid #aaa;
+  padding: 3px;
+  background: #fafafa;
+}
+
+table thead {
+  background: #ddeeff;
+  text-align: left;
+}
+
+table tr:nth-child(even) {
+  background: #f0f0f0;
+}
+
+blockquote {
+  padding: 0 .5em;
+  border: 1px solid black;
+  background: #ddeeff;
+}
+
+a {
+  font-size: 90%;
+  color:#aa0000;
+}
+
+a:hover {
+  color: #003366;
 }
