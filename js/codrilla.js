@@ -490,6 +490,13 @@
             $p.append(' (').append($link).append(')');
         }
 
+        // add open date line if in future
+        if (future) {
+            var $open = $('<p />').text('Opens ');
+            formatDate($open, asst.Open);
+            $item.append($open);
+        }
+
         // add due date line
         var $due = $('<p />').text('Due ');
         formatDate($due, asst.Close);

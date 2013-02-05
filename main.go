@@ -9,6 +9,7 @@ import (
 	"io/ioutil"
 	"log"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -21,6 +22,7 @@ type Config struct {
 	CompressionThreshold int
 
 	DatabaseName  string
+	LogFileName   string
 	GraderAddress string
 
 	BrowserIDVerifyURL string
@@ -51,6 +53,14 @@ func main() {
 	if err = json.Unmarshal(raw, &config); err != nil {
 		log.Fatalf("Failed to decode %s: %v", configFile, err)
 	}
+
+	// set up logger
+	logfile, err := os.OpenFile(config.LogFileName, os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0666)
+	if err != nil {
+		log.Fatalf("Failed to open logfile %s: %v", config.LogFileName, err)
+	}
+	defer logfile.Close()
+	log.SetOutput(logfile)
 
 	// load time zone
 	if timeZone, err = time.LoadLocation(config.TimeZoneName); err != nil {
