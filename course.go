@@ -320,6 +320,7 @@ func course_newassignment(w http.ResponseWriter, r *http.Request, db *sql.DB, in
 	assignmentsByID[id] = elt
 	course.Assignments[id] = elt
 	problem.Assignments[id] = elt
+	problem.Courses[course.Tag] = course
 }
 
 type CourseGradesResponseElt struct {
