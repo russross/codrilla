@@ -354,6 +354,7 @@
 
                 $('<h4>Update course membership</h4>').appendTo($div);
                 var $ta = $('<textarea class="coursemembership"></textarea>').appendTo($div);
+                $div.append('<br />');
                 var $tb = $('<button class="coursemembershipbutton">Upload course list JSON</button>').appendTo($div);
                 $tb.data('courseTag', course.Tag);
 
