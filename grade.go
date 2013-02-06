@@ -26,7 +26,8 @@ func gradeDaemon() {
 	retry := true
 	for {
 		if !retry {
-			gradeQueue[<-notifyGrader] = true
+			id := <-notifyGrader
+			gradeQueue[id] = true
 		}
 
 		// clear out the channel
@@ -130,7 +131,6 @@ func gradeOne(db *sql.DB) (bool, error) {
 		mutex.RUnlock()
 		return false, err
 	}
-	log.Printf("requestBody:\n%s\n", requestBody)
 
 	// release the read mutex
 	mutex.RUnlock()
@@ -144,6 +144,7 @@ func gradeOne(db *sql.DB) (bool, error) {
 	request, err := http.NewRequest("POST", u.String(), bytes.NewReader(requestBody))
 	if err != nil {
 		log.Printf("gradeOne: error creating request object: %v", err)
+		delete(gradeQueue, id)
 		return false, err
 	}
 	request.Header.Add("Content-Type", "application/json")
