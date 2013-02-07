@@ -1,4 +1,5 @@
 *.swp
 codrilla
+codrilla.log
 config.json
 *.sqlite3
