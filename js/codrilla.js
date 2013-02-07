@@ -129,7 +129,6 @@
     var setupInstructor = function () {
         $('#tabs').tabs('option', 'disabled', [1, 2, 3, 4, 5, 6, 7, 8, 9]);
         $('#tab-instructor-problemeditor').data('problemTypeTag', 'python27stdin');
-        refreshInstructorProblemEditor();
         refreshInstructorSchedule(true);
     };
 
@@ -395,9 +394,11 @@
 
                 // prepare the editor
                 var contents = {};
-                $.each(problemData || {}, function (key, value) {
-                    contents[key] = value;
-                });
+                if (problemData && problemData.Data) {
+                    $.each(problemData.Data, function (key, value) {
+                        contents[key] = value;
+                    });
+                }
                 var $editor = createEditor(problemType.FieldList, contents, 'creator');
                 $div.append($editor);
 
@@ -450,12 +451,18 @@
                 if (asst && asst.Problem == problem.ID)
                     $button.prop('selected', 'selected');
                 var name = $(' <b />').text(problem.Name);
+                var $editlink = $('<button class="editproblembutton">Edit</button>')
+                    .data('problemTypeTag', problem.Type)
+                    .data('problemID', problem.ID);
+                
                 $('<p />').appendTo($div)
                     .append($button)
                     .append(name)
                     .append(' (' + problem.Type + ')' +
                         ' Tags: ' + problem.Tags.join(' ') +
-                        ' UsedBy: ' + problem.UsedBy.join(' '));
+                        ' UsedBy: ' + problem.UsedBy.join(' ') +
+                        ' ')
+                    .append($editlink);
             });
 
             var $button = $('<button id="assignmenteditorsavebutton">Save assignment</button>');
@@ -598,7 +605,7 @@
         };
         $.ajax({
             type: 'POST',
-            url: '/problem/' + (problemID ? '/update/' + problemID : 'new'),
+            url: '/problem/' + (problemID ? 'update/' + problemID : 'new'),
             contentType: 'application/json; charset=utf-8',
             data: JSON.stringify(elt),
             success: function (res, status, xhr) {
@@ -618,6 +625,14 @@
         var problemTypeTag = $('#newproblemtypelist').val();
         $div.data('problemTypeTag', problemTypeTag);
         $div.data('problemID', undefined);
+        refreshInstructorProblemEditor(true);
+    });
+    $('.editproblembutton').live('click', function () {
+        var problemTypeTag = $(this).data('problemTypeTag');
+        var problemID = $(this).data('problemID');
+        var $div = $('#tab-instructor-problemeditor');
+        $div.data('problemTypeTag', problemTypeTag);
+        $div.data('problemID', problemID);
         refreshInstructorProblemEditor(true);
     });
 
