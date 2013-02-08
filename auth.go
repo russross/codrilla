@@ -17,7 +17,12 @@ func init() {
 	r.Add("POST", `/auth/login/browserid`, handlerNoAuth(auth_login_browserid))
 	r.Add("GET", `/auth/login/google`, handlerNoAuth(auth_login_google))
 	r.Add("POST", `/auth/logout`, handlerNoAuth(auth_logout))
+	r.Add("GET", `/auth/time`, http.HandlerFunc(auth_time))
 	http.Handle("/auth/", r)
+}
+
+func auth_time(w http.ResponseWriter, r *http.Request) {
+	writeJson(w, r, time.Now().In(timeZone))
 }
 
 func auth_login_browserid(w http.ResponseWriter, r *http.Request, session *sessions.Session) {

@@ -1,82 +1,89 @@
-    jQuery(function ($) {
-        var getCookies = function () {
-            CODRILLA = {
-                  Email: '',
-                  Role: '',
-                  Expires: 0,
-                  LoggedIn: false,
-                  LoginMethod: 'google'
-            };
-            var n = Number($.cookie('codrilla-expires'));
-            CODRILLA.Expires = new Date(n * 1000);
-            var now = new Date();
-            if (CODRILLA.Expires > now) {
-                CODRILLA.Email = $.cookie('codrilla-email');
-                CODRILLA.Role = $.cookie('codrilla-role');
-                CODRILLA.LoggedIn = true;
-            } else {
-                CODRILLA.Email = null;
-                CODRILLA.Role = null;
-                CODRILLA.LoggedIn = false;
-            }
+jQuery(function ($) {
+    // get an approximation of the server's time
+    var skew = 0;
+    var serverTime = function () {
+        var local = new Date().getTime();
+        return new Date(local + skew);
+    };
+
+    var getCookies = function () {
+        CODRILLA = {
+              Email: '',
+              Role: '',
+              Expires: 0,
+              LoggedIn: false,
+              LoginMethod: 'google'
         };
-
-        getCookies();
-
-        // login handling
-        if (CODRILLA.LoginMethod == 'persona') {
-            navigator.id.watch({
-                loggedInUser: CODRILLA.Email,
-                onlogin: function(assertion) {
-                    $.ajax({
-                        type: 'POST',
-                        url: '/auth/login/browserid',
-                        dataType: 'json',
-                        data: { Assertion: assertion },
-                        success: function (res, status, xhr) {
-                            getCookies();
-                            setupLoggedIn();
-                        },
-                        error: function (res, status, xhr) {
-                            console.log('login failure');
-                            console.log(res);
-                            setupLoggedOut();
-                        }
-                    });
-                },
-                onlogout: function() {
-                    setupLoggedOut();
-                    $.ajax({
-                        type: 'POST',
-                        url: '/auth/logout',
-                        success: function(res, status, xhr) {
-                            setupLoggedOut();
-                        },
-                        error: function(res, status, xhr) {
-                            console.log('logout failure');
-                            console.log(res);
-                            setupLoggedOut();
-                        }
-                    });
-                } 
-            });
+        var n = Number($.cookie('codrilla-expires'));
+        CODRILLA.Expires = new Date(n * 1000);
+        var now = serverTime();
+        if (CODRILLA.Expires > now) {
+            CODRILLA.Email = $.cookie('codrilla-email');
+            CODRILLA.Role = $.cookie('codrilla-role');
+            CODRILLA.LoggedIn = true;
+        } else {
+            CODRILLA.Email = null;
+            CODRILLA.Role = null;
+            CODRILLA.LoggedIn = false;
         }
-        $('#persona-login-button').click(function () {
-            navigator.id.request();
-            return false;
+    };
+
+    getCookies();
+
+    // login handling
+    if (CODRILLA.LoginMethod == 'persona') {
+        navigator.id.watch({
+            loggedInUser: CODRILLA.Email,
+            onlogin: function(assertion) {
+                $.ajax({
+                    type: 'POST',
+                    url: '/auth/login/browserid',
+                    dataType: 'json',
+                    data: { Assertion: assertion },
+                    success: function (res, status, xhr) {
+                        getCookies();
+                        setupLoggedIn();
+                    },
+                    error: function (res, status, xhr) {
+                        console.log('login failure');
+                        console.log(res);
+                        setupLoggedOut();
+                    }
+                });
+            },
+            onlogout: function() {
+                setupLoggedOut();
+                $.ajax({
+                    type: 'POST',
+                    url: '/auth/logout',
+                    success: function(res, status, xhr) {
+                        setupLoggedOut();
+                    },
+                    error: function(res, status, xhr) {
+                        console.log('logout failure');
+                        console.log(res);
+                        setupLoggedOut();
+                    }
+                });
+            } 
         });
-        $('#google-login-button').click(function () {
-            var url = 'https://accounts.google.com/o/oauth2/auth' +
-                '?response_type=code' +
-                '&client_id=854211025378.apps.googleusercontent.com' +
-                '&redirect_uri=http://' + window.location.host + '/auth/login/google' +
-                '&scope=https://www.googleapis.com/auth/userinfo.email';
-            var loginwindow = window.open(url, 'login');
-            if (window.focus) loginwindow.focus();
-            return false;
-        });
-        $('#logout-button').click(function () {
-            if (CODRILLA.LoginMethod == 'persona')
+    }
+    $('#persona-login-button').click(function () {
+        navigator.id.request();
+        return false;
+    });
+    $('#google-login-button').click(function () {
+        var url = 'https://accounts.google.com/o/oauth2/auth' +
+            '?response_type=code' +
+            '&client_id=854211025378.apps.googleusercontent.com' +
+            '&redirect_uri=http://' + window.location.host + '/auth/login/google' +
+            '&scope=https://www.googleapis.com/auth/userinfo.email';
+        var loginwindow = window.open(url, 'login');
+        if (window.focus) loginwindow.focus();
+        return false;
+    });
+    $('#logout-button').click(function () {
+        if (CODRILLA.LoginMethod == 'persona')
             navigator.id.logout();
         else {
             $.ajax({
@@ -112,7 +119,7 @@
         CODRILLA = {
             Email: '',
             Role: '',
-            Expires: new Date(),
+            Expires: serverTime(),
             LoggedIn: false
         };
 
@@ -433,9 +440,19 @@
 
             $('<h3 />').text('Course: ' + courseTag).appendTo($div);
             $('<h3>Start date (leave blank to start now)</h3>').appendTo($div);
-            $('<input type="text" id="assignmentstartdate">').appendTo($div);
+            $('<input type="text" id="assignmentstartdate">')
+                .datepicker()
+                .appendTo($div);
             $('<h3>Due date</h3>').appendTo($div);
-            $('<input type="text" id="assignmentduedate">').appendTo($div).val(new Date());
+            var tonight = serverTime();
+            tonight.setHours(23);
+            tonight.setMinutes(59);
+            tonight.setSeconds(59);
+            tonight.setMilliseconds(0);
+            $('<input type="text" id="assignmentduedate">')
+                .datepicker()
+                .appendTo($div)
+                .val(tonight);
             $('<h3>Pick a problem</h3>').appendTo($div);
 
             // sort problems by name
@@ -477,7 +494,7 @@
         var $item = $('<li />');
 
         // color the item if appropriate
-        var now = new Date();
+        var now = serverTime();
         var future = now < new Date(asst.Open);
         if (asst.Passed && asst.ToBeGraded == 0)
             $item.addClass('green');
@@ -658,7 +675,7 @@
             Close: end,
             ForCredit: true
         };
-        var now = new Date();
+        var now = serverTime();
         if (end < now) {
             alert('Due date must be in the future');
             return;
@@ -926,7 +943,7 @@
     };
 
     var until = function (when) {
-        var now = new Date();
+        var now = serverTime();
         var seconds = Math.floor((when.getTime() - now.getTime()) / 1000.0);
         var sign = (seconds < 0 ? '-' : '');
         seconds = Math.abs(seconds);
@@ -958,7 +975,7 @@
     };
     var formatDate = function ($container, utc) {
         var when = new Date(utc);
-        var now = new Date();
+        var now = serverTime();
         var stamp = daysOfWeek[when.getDay()] + ', ' + months[when.getMonth()] + ' ' + when.getDate();
         if (when.getFullYear() != now.getFullYear())
             stamp += ', ' + when.getFullYear();
@@ -982,4 +999,10 @@
     } else {
         setupLoggedOut();
     }
+    $.getJSON('/auth/time', function (server) {
+        // figure out roughly how far off our clock is from the server
+        var now = new Date();
+        var really = new Date(server);
+        skew = really - now;
+    });
 });
