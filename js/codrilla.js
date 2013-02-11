@@ -433,60 +433,65 @@ jQuery(function ($) {
         if (!courseTag) return;
         var asst = $('#tab-instructor-assignmenteditor').data('asst');
         $.getJSON('/problem/tags', function (container) {
-            var $div = $('#tab-instructor-assignmenteditor');
-            $div
-                .empty()
-                .append('<h2>Assignment Editor</h2>');
+            var buildEditor = function (asstData) {
+                var $div = $('#tab-instructor-assignmenteditor');
+                $div
+                    .empty()
+                    .append('<h2>Assignment Editor</h2>');
 
-            $('<h3 />').text('Course: ' + courseTag).appendTo($div);
-            $('<h3>Start date (leave blank to start now)</h3>').appendTo($div);
-            $('<input type="text" id="assignmentstartdate">')
-                .datepicker()
-                .appendTo($div);
-            $('<h3>Due date</h3>').appendTo($div);
-            var tonight = serverTime();
-            tonight.setHours(23);
-            tonight.setMinutes(59);
-            tonight.setSeconds(59);
-            tonight.setMilliseconds(0);
-            $('<input type="text" id="assignmentduedate">')
-                .datepicker()
-                .appendTo($div)
-                .val(tonight);
-            $('<h3>Pick a problem</h3>').appendTo($div);
+                $('<h3 />').text('Course: ' + courseTag).appendTo($div);
+                $('<h3>Start date (leave blank to start now)</h3>').appendTo($div);
+                $('<input type="text" id="assignmentstartdate">')
+                    .datepicker()
+                    .appendTo($div);
+                $('<h3>Due date</h3>').appendTo($div);
+                var tonight = serverTime();
+                tonight.setHours(23);
+                tonight.setMinutes(59);
+                tonight.setSeconds(59);
+                tonight.setMilliseconds(0);
+                $('<input type="text" id="assignmentduedate">')
+                    .datepicker()
+                    .appendTo($div)
+                    .val(tonight);
+                $('<h3>Pick a problem</h3>').appendTo($div);
 
-            // sort problems by name
-            container.Problems.sort(function (a, b) {
-                if (a.Name < b.Name) return -1;
-                if (a.Name > b.Name) return 1;
-                return 0;
-            });
+                // sort problems by name
+                container.Problems.sort(function (a, b) {
+                    if (a.Name < b.Name) return -1;
+                    if (a.Name > b.Name) return 1;
+                    return 0;
+                });
 
-            $.each(container.Problems, function (i, problem) {
-                var $button = $('<input type="radio" name="problempicker">')
-                    .val(problem.ID);
-                if (asst && asst.Problem == problem.ID)
-                    $button.prop('selected', 'selected');
-                var name = $(' <b />').text(problem.Name);
-                var $editlink = $('<button class="editproblembutton">Edit</button>')
-                    .data('problemTypeTag', problem.Type)
-                    .data('problemID', problem.ID);
-                
-                $('<p />').appendTo($div)
-                    .append($button)
-                    .append(name)
-                    .append(' (' + problem.Type + ')' +
-                        ' Tags: ' + problem.Tags.join(' ') +
-                        ' UsedBy: ' + problem.UsedBy.join(' ') +
-                        ' ')
-                    .append($editlink);
-            });
+                $.each(container.Problems, function (i, problem) {
+                    var $button = $('<input type="radio" name="problempicker">')
+                        .val(problem.ID);
+                    if (asst && asst.Problem == problem.ID)
+                        $button.prop('selected', 'selected');
+                    var name = $(' <b />').text(problem.Name);
+                    var $editlink = $('<button class="editproblembutton">Edit</button>')
+                        .data('problemTypeTag', problem.Type)
+                        .data('problemID', problem.ID);
+                    
+                    $('<p />').appendTo($div)
+                        .append($button)
+                        .append(name)
+                        .append(' (' + problem.Type + ')' +
+                            ' Tags: ' + problem.Tags.join(' ') +
+                            ' UsedBy: ' + problem.UsedBy.join(' ') +
+                            ' ')
+                        .append($editlink);
+                });
 
-            var $button = $('<button id="assignmenteditorsavebutton">Save assignment</button>');
-            $button.appendTo($div);
+                var $button = $('<button id="assignmenteditorsavebutton">Save assignment</button>');
+                $button.appendTo($div);
 
-            if (setTab)
-                $('#tabs').tabs('enable', 7).tabs('option', 'active', 7);
+                if (setTab)
+                    $('#tabs').tabs('enable', 7).tabs('option', 'active', 7);
+            };
+
+            // if we are editing an existing assignment, load it
+            buildEditor();
         });
     };
 

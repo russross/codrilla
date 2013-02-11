@@ -104,33 +104,24 @@ Students
 Courses
 -------
 
-*   Upload a Canvas CSV course grade list to update course
-    membership:
+*   Upload a JSON list of students in a course
 
-        POST /course/canvascsvlist
+        POST /course/courselistupload/COURSETAG
 
-    Up to 3 CSV files may be uploaded as form fields `CSVFile1`,
-    `CSVFile2`, and `CSVFile3`, respectively.
-    Returns the following:
+    The data supplied should be a JSON list of students, with
+    each student represented as a list containing the student's name
+    and email address. For example:
 
-    *   Success: true if the update was successful. False may
-        indicate a partial update.
-    *   UnknownStudents: a list of students (as displayable strings)
-        found in the CSV file for which email addresses are unknown.
-        The mappings must be updated before the students can be
-        enrolled in the course.
-    *   Log: a list of information messages created as the file was
-        processed.
+        [
+            [ "John Doe", "jdoe1" ],
+            [ "Jane Doe", "jdoe2" ]
+        ]
 
-    All students enrolled in the course that do not appear in one of
-    the CSV files will be dropped from the course.
+    If a partial email address is supplied, the default domain will
+    be added automatically.
 
-*   Update and student mapping data:
-
-        POST /course/canvasstudentmappings
-
-    The contents must be JSON object mapping Canvas student IDs to
-    email addresses.
+    The course list will be reset to match the given list. Students
+    will be added and dropped as necessary.
 
 *   Get a list of courses and assignments (instructor)
 
