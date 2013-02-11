@@ -1,11 +1,16 @@
 package main
 
 import (
+	"archive/zip"
+	"bytes"
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"github.com/gorilla/pat"
 	"log"
 	"net/http"
+	"path/filepath"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -17,6 +22,7 @@ func init() {
 	r.Add("GET", `/student/courses`, handlerStudent(student_courses))
 	r.Add("GET", `/student/grades/{coursetag:[\w:_\-]+$}`, handlerStudent(student_grades))
 	r.Add("GET", `/student/assignment/{id:\d+$}`, handlerStudent(student_assignment))
+	r.Add("GET", `/student/download/{id:\d+$}`, handlerStudent(student_download))
 	r.Add("POST", `/student/submit/{id:\d+$}`, handlerStudentJson(student_submit))
 	r.Add("GET", `/student/result/{id:\d+}/{n:-1$|\d+$}`, handlerStudent(student_result))
 	http.Handle("/student/", r)
@@ -386,18 +392,28 @@ func student_submit(w http.ResponseWriter, r *http.Request, db *sql.DB, student 
 
 	for _, field := range problemType.FieldList {
 		if value, present := data[field.Name]; present && field.Student == "edit" {
-			if field.List {
-				// TODO: normalize line endings for list values, too
-				filtered[field.Name] = value
-			} else {
-				switch t := value.(type) {
-				case string:
-					// normalize line endings
-					filtered[field.Name] = fixLineEndings(t)
+			switch t := value.(type) {
+			case string:
+				// normalize line endings
+				filtered[field.Name] = fixLineEndings(t)
 
-				default:
-					filtered[field.Name] = value
+			case []interface{}:
+				// some kind of list type
+				var lst []interface{}
+				for _, elt := range t {
+					// are the list elements strings?
+					switch elt_t := elt.(type) {
+					case string:
+						lst = append(lst, fixLineEndings(elt_t))
+
+					default:
+						lst = append(lst, elt)
+					}
 				}
+				filtered[field.Name] = lst
+
+			default:
+				filtered[field.Name] = value
 			}
 		} else if field.Student == "edit" {
 			log.Printf("Missing %s field in submission", field.Name)
@@ -504,4 +520,169 @@ func student_submit(w http.ResponseWriter, r *http.Request, db *sql.DB, student 
 
 	// notify the grader of work to do
 	notifyGrader <- solution.ID
+}
+
+func student_download(w http.ResponseWriter, r *http.Request, student *StudentDB) {
+	id, err := strconv.ParseInt(r.URL.Query().Get(":id"), 10, 64)
+	if err != nil {
+		log.Printf("Bad ID: %s", r.URL.Query().Get(":id"))
+		http.Error(w, "Not found", http.StatusNotFound)
+		return
+	}
+
+	// find the assignment
+	asst, present := assignmentsByID[id]
+	if !present {
+		log.Printf("No such assignment: %d", id)
+		http.Error(w, "Not found", http.StatusNotFound)
+		return
+	}
+
+	// find the course
+	course := asst.Course
+
+	// make sure the course is active
+	now := time.Now().In(timeZone)
+	if now.After(course.Close) {
+		log.Printf("Course is not active: %s", course.Tag)
+		http.Error(w, "Course not active", http.StatusForbidden)
+		return
+	}
+
+	// make sure the student is in the course
+	if _, present := student.Courses[course.Tag]; !present {
+		log.Printf("Student not enrolled in course: %s", course.Tag)
+		http.Error(w, "Not enrolled in course", http.StatusForbidden)
+		return
+	}
+
+	// get the problem
+	problem := asst.Problem
+	problemType := problem.Type
+
+	// filter problem fields down to what the student is allowed to see
+	data := make(map[string]interface{})
+	for _, field := range problemType.FieldList {
+		if value, present := problem.Data[field.Name]; present && field.Student == "view" {
+			data[field.Name] = value
+		}
+	}
+
+	// get the student attempt (or nil if no attempt has been made)
+	sol := student.SolutionsByAssignment[asst.ID]
+
+	filename, zipfile, err := makeAssignmentZipFile("student", asst, sol)
+	if err != nil {
+		http.Error(w, "Failed to create zipfile", http.StatusInternalServerError)
+	}
+
+	w.Header()["Content-Type"] = []string{"application/zip"}
+	w.Header()["Content-Length"] = []string{fmt.Sprintf("%d", len(zipfile))}
+	w.Header()["Content-Disposition"] =
+		[]string{`attachment; filename="` + filename + `"`}
+	w.Write(zipfile)
+}
+
+var (
+	Apostrophe          = regexp.MustCompile(`'`)
+	NonWord             = regexp.MustCompile(`[^\w\.]+`)
+	Underscores         = regexp.MustCompile(`__+`)
+	LeadTrailUnderscore = regexp.MustCompile(`^_|_$`)
+	LonelyS1            = regexp.MustCompile(`_s_`)
+	LonelyS2            = regexp.MustCompile(`_s$`)
+)
+
+func makeAssignmentZipFile(role string, asst *AssignmentDB, solution *SolutionDB) (filename string, zipfile []byte, err error) {
+	problem := asst.Problem
+	problemType := problem.Type
+
+	// make the problem name into a decent directory name
+	prefix := problem.Name
+	prefix = Apostrophe.ReplaceAllString(prefix, "")
+	prefix = NonWord.ReplaceAllString(prefix, "_")
+	prefix = Underscores.ReplaceAllString(prefix, "_")
+	prefix = LeadTrailUnderscore.ReplaceAllString(prefix, "")
+	prefix = LonelyS1.ReplaceAllString(prefix, "s_")
+	prefix = LonelyS2.ReplaceAllString(prefix, "s")
+
+	var buf bytes.Buffer
+	z := zip.NewWriter(&buf)
+
+	merged := make(map[string]interface{})
+	for key, value := range problem.Data {
+		merged[key] = value
+	}
+
+	// extract the appropriate fields
+fieldloop:
+	for _, field := range problemType.FieldList {
+		if !(role == "creator" && field.Creator == "edit" || role == "student" && field.Student == "view") {
+			continue
+		}
+		var values []interface{}
+		value, present := problem.Data[field.Name]
+		if !present {
+			continue
+		}
+
+		// gather the value or values into a list
+		if field.List {
+			switch t := value.(type) {
+			case []interface{}:
+				values = t
+			}
+		} else {
+			values = []interface{}{value}
+		}
+
+		var name string
+		for i, elt := range values {
+			switch field.Type {
+			case "string":
+				fallthrough
+			case "text":
+				if field.List {
+					name = fmt.Sprintf("%s%02d.txt", field.Name, i+1)
+				} else {
+					name = fmt.Sprintf("%s.txt", field.Name)
+				}
+
+			case "python":
+				if field.List {
+					name = fmt.Sprintf("%s%02d.py", field.Name, i+1)
+				} else {
+					name = fmt.Sprintf("%s.py", field.Name)
+				}
+
+			case "markdown":
+				if field.List {
+					name = fmt.Sprintf("%s%02d.md", field.Name, i+1)
+				} else {
+					name = fmt.Sprintf("%s.md", field.Name)
+				}
+
+			default:
+				continue fieldloop
+			}
+
+			s := fmt.Sprintf("%v", elt)
+			if len(s) > 0 {
+				out, err := z.Create(filepath.Join(prefix, name))
+				if err != nil {
+					log.Printf("Error creating file %s in .zip file: %v", name, err)
+					return "", nil, err
+				}
+				if _, err = out.Write([]byte(s)); err != nil {
+					log.Printf("Error writing data to file %s in .zip file: %v", name, err)
+					return "", nil, err
+				}
+			}
+		}
+	}
+	if err = z.Close(); err != nil {
+		log.Printf("Error closing .zip file: %v", err)
+		return "", nil, err
+	}
+
+	return prefix + ".zip", buf.Bytes(), nil
 }

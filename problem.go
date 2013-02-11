@@ -187,7 +187,29 @@ func problem_save_common(w http.ResponseWriter, r *http.Request, db *sql.DB, ins
 
 	for _, field := range problemType.FieldList {
 		if value, present := problem.Data[field.Name]; present && field.Creator == "edit" {
-			filtered[field.Name] = value
+			switch t := value.(type) {
+			case string:
+				// normalize line endings
+				filtered[field.Name] = fixLineEndings(t)
+
+			case []interface{}:
+				// some kind of list type
+				var lst []interface{}
+				for _, elt := range t {
+					// are the list elements strings?
+					switch elt_t := elt.(type) {
+					case string:
+						lst = append(lst, fixLineEndings(elt_t))
+
+					default:
+						lst = append(lst, elt)
+					}
+				}
+				filtered[field.Name] = lst
+
+			default:
+				filtered[field.Name] = value
+			}
 		} else if field.Creator == "edit" {
 			log.Printf("Missing %s field in problem", field.Name)
 			http.Error(w, "Problem data missing required field", http.StatusBadRequest)
