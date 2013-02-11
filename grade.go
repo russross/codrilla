@@ -114,7 +114,6 @@ func gradeOne(db *sql.DB) (bool, error) {
 	// merge the fields into a single submission record
 	merged := make(map[string]interface{})
 
-	log.Printf("%v\n", problem.Data)
 	for _, field := range problemType.FieldList {
 		if value, present := attempt.Submission[field.Name]; present && field.Grader == "view" {
 			merged[field.Name] = value

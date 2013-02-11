@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"sort"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -335,6 +336,17 @@ func student_result(w http.ResponseWriter, r *http.Request, student *StudentDB) 
 	writeJson(w, r, resp)
 }
 
+func fixLineEndings(s string) string {
+	s = strings.Replace(s, "\r\n", "\n", -1)
+	if !strings.HasSuffix(s, "\n") {
+		s = s + "\n"
+	}
+	for strings.Contains(s, " \n") {
+		s = strings.Replace(s, " \n", "\n", -1)
+	}
+	return s
+}
+
 func student_submit(w http.ResponseWriter, r *http.Request, db *sql.DB, student *StudentDB, decoder *json.Decoder) {
 	assignmentID, err := strconv.ParseInt(r.URL.Query().Get(":id"), 10, 64)
 	if err != nil {
@@ -374,7 +386,19 @@ func student_submit(w http.ResponseWriter, r *http.Request, db *sql.DB, student 
 
 	for _, field := range problemType.FieldList {
 		if value, present := submission[field.Name]; present && field.Student == "edit" {
-			filtered[field.Name] = value
+			if field.List {
+				// TODO: normalize line endings for list values, too
+				filtered[field.Name] = value
+			} else {
+				switch t := value.(type) {
+				case string:
+					// normalize line endings
+					filtered[field.Name] = fixLineEndings(t)
+
+				default:
+					filtered[field.Name] = value
+				}
+			}
 		} else if field.Student == "edit" {
 			log.Printf("Missing %s field in submission", field.Name)
 			http.Error(w, "Submission missing required field", http.StatusBadRequest)
