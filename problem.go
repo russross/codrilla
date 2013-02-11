@@ -300,9 +300,9 @@ func problem_save_common(w http.ResponseWriter, r *http.Request, db *sql.DB, ins
 
 		// delete old tag links
 		for _, tag := range p.Tags {
-			delete(p.Tags, tag.Tag)
 			delete(tag.Problems, id)
 		}
+		p.Tags = make(map[string]*TagDB)
 	} else {
 		// create new
 		p = &ProblemDB{
@@ -333,6 +333,8 @@ func problem_save_common(w http.ResponseWriter, r *http.Request, db *sql.DB, ins
 		tag.Problems[problem.ID] = p
 		p.Tags[tagName] = tag
 	}
+
+	// note: assignments are not affected by problem updates, so we ignore asst links
 
 	// return the final problem, complete with new ID (if applicable)
 	final := getProblem(p)

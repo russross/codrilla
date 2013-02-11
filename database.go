@@ -12,100 +12,45 @@ import (
 var database *sql.DB
 var mutex sync.RWMutex
 
-var (
-	administratorsByEmail = make(map[string]*AdministratorDB)
-	instructorsByEmail    = make(map[string]*InstructorDB)
-	studentsByEmail       = make(map[string]*StudentDB)
-	coursesByTag          = make(map[string]*CourseDB)
-	problemsByID          = make(map[int64]*ProblemDB)
-	tagsByTag             = make(map[string]*TagDB)
-	assignmentsByID       = make(map[int64]*AssignmentDB)
-	solutionsByID         = make(map[int64]*SolutionDB)
-)
+func initDatabase() {
+	mutex.Lock()
+	db, err := sql.Open("sqlite3", config.DatabaseName)
+	if err != nil {
+		log.Fatalf("Error opening %s: %v", config.DatabaseName, err)
+	}
 
+	// read entire database into memory, one table at a time
+	log.Printf("reading %s", config.DatabaseName)
+	ScanAdministratorTable(db)
+	ScanInstructorTable(db)
+	ScanStudentTable(db)
+	ScanCourseTable(db)
+	ScanCourseInstructorTable(db)
+	ScanCourseStudentTable(db)
+	ScanTagTable(db)
+	ScanProblemTable(db)
+	ScanProblemTagTable(db)
+	ScanAssignmentTable(db)
+	ScanSolutionTable(db)
+	ScanSubmissionTable(db)
+
+	database = db
+	mutex.Unlock()
+}
+
+//
+// Data types
+//
+
+// administratorsByEmail[email]
 type AdministratorDB struct {
 	Email string
 	Name  string
 }
 
-type InstructorDB struct {
-	Email string
-	Name  string
+var administratorsByEmail = make(map[string]*AdministratorDB)
 
-	Courses map[string]*CourseDB
-}
-
-type StudentDB struct {
-	Email                 string
-	Name                  string
-	Courses               map[string]*CourseDB
-	SolutionsByAssignment map[int64]*SolutionDB
-}
-
-type CourseDB struct {
-	Tag   string
-	Name  string
-	Close time.Time
-
-	Instructors map[string]*InstructorDB
-	Students    map[string]*StudentDB
-	Assignments map[int64]*AssignmentDB
-}
-
-type ProblemDB struct {
-	ID          int64
-	Name        string
-	Type        *ProblemType
-	Data        map[string]interface{}
-	Tags        map[string]*TagDB
-	Assignments map[int64]*AssignmentDB
-	Courses     map[string]*CourseDB
-}
-
-type TagDB struct {
-	Tag         string
-	Description string
-	Priority    int64
-	Problems    map[int64]*ProblemDB
-}
-
-type AssignmentDB struct {
-	ID                 int64
-	Course             *CourseDB
-	Problem            *ProblemDB
-	ForCredit          bool
-	Open               time.Time
-	Close              time.Time
-	SolutionsByStudent map[string]*SolutionDB
-}
-
-type SolutionDB struct {
-	ID                 int64
-	Student            *StudentDB
-	Assignment         *AssignmentDB
-	SubmissionsInOrder []*SubmissionDB
-}
-
-type SubmissionDB struct {
-	Solution    *SolutionDB
-	TimeStamp   time.Time
-	Submission  map[string]interface{}
-	GradeReport map[string]interface{}
-	Passed      bool
-}
-
-func initDatabase() {
-	db, err := sql.Open("sqlite3", config.DatabaseName)
-	if err != nil {
-		log.Fatalf("Error opening %s: %v", config.DatabaseName, err)
-	}
-	log.Printf("reading %s", config.DatabaseName)
-
-	//
-	// read entire database into memory, one table at a time
-	//
-
-	// Administrators
+func ScanAdministratorTable(db *sql.DB) {
 	rows, err := db.Query("select * from Administrator")
 	if err != nil {
 		log.Fatalf("DB error selecting from Administrator: %v", err)
@@ -118,9 +63,21 @@ func initDatabase() {
 		}
 		administratorsByEmail[elt.Email] = elt
 	}
+}
 
-	// Instructors
-	rows, err = db.Query("select * from Instructor")
+// instructorsByEmail[email]
+// CourseDB.Instructors[email]
+type InstructorDB struct {
+	Email string
+	Name  string
+
+	Courses map[string]*CourseDB
+}
+
+var instructorsByEmail = make(map[string]*InstructorDB)
+
+func ScanInstructorTable(db *sql.DB) {
+	rows, err := db.Query("select * from Instructor")
 	if err != nil {
 		log.Fatalf("DB error selecting from Instructor: %v", err)
 	}
@@ -133,9 +90,23 @@ func initDatabase() {
 		}
 		instructorsByEmail[elt.Email] = elt
 	}
+}
 
-	// Students
-	rows, err = db.Query("select * from Student")
+// studentsByEmail[email]
+// CourseDB.Students[email]
+// AssignmentDB.SolutionsByStudent[email] = SolutionDB
+// SolutionDB.Student
+type StudentDB struct {
+	Email                 string
+	Name                  string
+	Courses               map[string]*CourseDB
+	SolutionsByAssignment map[int64]*SolutionDB
+}
+
+var studentsByEmail = make(map[string]*StudentDB)
+
+func ScanStudentTable(db *sql.DB) {
+	rows, err := db.Query("select * from Student")
 	if err != nil {
 		log.Fatalf("DB error selecting from Student: %v", err)
 	}
@@ -149,9 +120,27 @@ func initDatabase() {
 		}
 		studentsByEmail[elt.Email] = elt
 	}
+}
 
-	// Courses
-	rows, err = db.Query("select * from Course")
+// coursesByTag[tag]
+// InstructorDB.Courses[tag]
+// StudentDB.Courses[tag]
+// ProblemDB.Courses[tag]
+// AssignmentDB.Course
+type CourseDB struct {
+	Tag   string
+	Name  string
+	Close time.Time
+
+	Instructors map[string]*InstructorDB
+	Students    map[string]*StudentDB
+	Assignments map[int64]*AssignmentDB
+}
+
+var coursesByTag = make(map[string]*CourseDB)
+
+func ScanCourseTable(db *sql.DB) {
+	rows, err := db.Query("select * from Course")
 	if err != nil {
 		log.Fatalf("DB error selecting from Course: %v", err)
 	}
@@ -166,9 +155,10 @@ func initDatabase() {
 		}
 		coursesByTag[elt.Tag] = elt
 	}
+}
 
-	// CourseInstructors
-	rows, err = db.Query("select * from CourseInstructor")
+func ScanCourseInstructorTable(db *sql.DB) {
+	rows, err := db.Query("select * from CourseInstructor")
 	if err != nil {
 		log.Fatalf("DB error selecting from CourseInstructor: %v", err)
 	}
@@ -181,9 +171,10 @@ func initDatabase() {
 		coursesByTag[course].Instructors[instructor] = instructorsByEmail[instructor]
 		instructorsByEmail[instructor].Courses[course] = coursesByTag[course]
 	}
+}
 
-	// CourseStudents
-	rows, err = db.Query("select * from CourseStudent")
+func ScanCourseStudentTable(db *sql.DB) {
+	rows, err := db.Query("select * from CourseStudent")
 	if err != nil {
 		log.Fatalf("DB error selecting from CourseStudent: %v", err)
 	}
@@ -196,9 +187,52 @@ func initDatabase() {
 		coursesByTag[course].Students[student] = studentsByEmail[student]
 		studentsByEmail[student].Courses[course] = coursesByTag[course]
 	}
+}
 
-	// Problems
-	rows, err = db.Query("select * from Problem")
+// tagsByTag[tag]
+// ProblemDB.Tags[tag]
+type TagDB struct {
+	Tag         string
+	Description string
+	Priority    int64
+	Problems    map[int64]*ProblemDB
+}
+
+var tagsByTag = make(map[string]*TagDB)
+
+func ScanTagTable(db *sql.DB) {
+	rows, err := db.Query("select * from Tag")
+	if err != nil {
+		log.Fatalf("DB error selecting from Tag: %v", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		elt := new(TagDB)
+		elt.Problems = make(map[int64]*ProblemDB)
+		if err = rows.Scan(&elt.Tag, &elt.Description, &elt.Priority); err != nil {
+			log.Fatalf("DB error scanning Tag: %v", err)
+		}
+		tagsByTag[elt.Tag] = elt
+	}
+}
+
+// problemsByID[problemID]
+// TagDB.Problems[problemID]
+// AssignmentDB.Problem
+type ProblemDB struct {
+	ID          int64
+	Name        string
+	Type        *ProblemType
+	Data        map[string]interface{}
+	Tags        map[string]*TagDB
+	Assignments map[int64]*AssignmentDB
+	Courses     map[string]*CourseDB
+}
+
+var problemsByID = make(map[int64]*ProblemDB)
+
+func ScanProblemTable(db *sql.DB) {
+	rows, err := db.Query("select * from Problem")
 	if err != nil {
 		log.Fatalf("DB error selecting from Problem: %v", err)
 	}
@@ -223,24 +257,10 @@ func initDatabase() {
 		}
 		problemsByID[elt.ID] = elt
 	}
+}
 
-	// Tags
-	rows, err = db.Query("select * from Tag")
-	if err != nil {
-		log.Fatalf("DB error selecting from Tag: %v", err)
-	}
-	defer rows.Close()
-	for rows.Next() {
-		elt := new(TagDB)
-		elt.Problems = make(map[int64]*ProblemDB)
-		if err = rows.Scan(&elt.Tag, &elt.Description, &elt.Priority); err != nil {
-			log.Fatalf("DB error scanning Tag: %v", err)
-		}
-		tagsByTag[elt.Tag] = elt
-	}
-
-	// ProblemTags
-	rows, err = db.Query("select * from ProblemTag")
+func ScanProblemTagTable(db *sql.DB) {
+	rows, err := db.Query("select * from ProblemTag")
 	if err != nil {
 		log.Fatalf("DB error selecting from ProblemTag: %v", err)
 	}
@@ -254,9 +274,26 @@ func initDatabase() {
 		problemsByID[problem].Tags[tag] = tagsByTag[tag]
 		tagsByTag[tag].Problems[problem] = problemsByID[problem]
 	}
+}
 
-	// Assignments
-	rows, err = db.Query("select * from Assignment")
+// assignmentsByID[asstID]
+// CourseDB.Assignments[asstID]
+// ProblemDB.Assignments[asstID]
+// SolutionDB.Assignment
+type AssignmentDB struct {
+	ID                 int64
+	Course             *CourseDB
+	Problem            *ProblemDB
+	ForCredit          bool
+	Open               time.Time
+	Close              time.Time
+	SolutionsByStudent map[string]*SolutionDB
+}
+
+var assignmentsByID = make(map[int64]*AssignmentDB)
+
+func ScanAssignmentTable(db *sql.DB) {
+	rows, err := db.Query("select * from Assignment")
 	if err != nil {
 		log.Fatalf("DB error selecting from Assignment: %v", err)
 	}
@@ -278,9 +315,23 @@ func initDatabase() {
 		// let problems know which courses use them
 		elt.Problem.Courses[course] = elt.Course
 	}
+}
 
-	// Solutions
-	rows, err = db.Query("select * from Solution")
+// solutionsByID[id]
+// StudentDB.SolutionsByAssignment[asstID]
+// AssignmentDB.SolutionsByStudent[email]
+// SubmissionDB.Solution
+type SolutionDB struct {
+	ID                 int64
+	Student            *StudentDB
+	Assignment         *AssignmentDB
+	SubmissionsInOrder []*SubmissionDB
+}
+
+var solutionsByID = make(map[int64]*SolutionDB)
+
+func ScanSolutionTable(db *sql.DB) {
+	rows, err := db.Query("select * from Solution")
 	if err != nil {
 		log.Fatalf("DB error selecting from Solution: %v", err)
 	}
@@ -298,9 +349,19 @@ func initDatabase() {
 		elt.Student.SolutionsByAssignment[assignment] = elt
 		elt.Assignment.SolutionsByStudent[student] = elt
 	}
+}
 
-	// Submissions
-	rows, err = db.Query("select * from Submission order by TimeStamp")
+// SolutionDB.SubmissionsInOrder[]
+type SubmissionDB struct {
+	Solution    *SolutionDB
+	TimeStamp   time.Time
+	Submission  map[string]interface{}
+	GradeReport map[string]interface{}
+	Passed      bool
+}
+
+func ScanSubmissionTable(db *sql.DB) {
+	rows, err := db.Query("select * from Submission order by TimeStamp")
 	if err != nil {
 		log.Fatalf("DB error selecting from Submission: %v", err)
 	}
@@ -327,6 +388,4 @@ func initDatabase() {
 		}
 		elt.Solution.SubmissionsInOrder = append(elt.Solution.SubmissionsInOrder, elt)
 	}
-
-	database = db
 }

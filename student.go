@@ -336,24 +336,24 @@ func student_result(w http.ResponseWriter, r *http.Request, student *StudentDB) 
 }
 
 func student_submit(w http.ResponseWriter, r *http.Request, db *sql.DB, student *StudentDB, decoder *json.Decoder) {
-	assignmentID, err := strconv.ParseInt(r.URL.Query().Get(":id"), 10, 64)
+	asstID, err := strconv.ParseInt(r.URL.Query().Get(":id"), 10, 64)
 	if err != nil {
 		log.Printf("Bad assignment ID: %s", r.URL.Query().Get(":id"))
 		http.Error(w, "Assignment not found", http.StatusNotFound)
 		return
 	}
 
-	submission := make(map[string]interface{})
-	if err := decoder.Decode(&submission); err != nil {
+	data := make(map[string]interface{})
+	if err := decoder.Decode(&data); err != nil {
 		log.Printf("Failure decoding JSON request: %v", err)
 		http.Error(w, "Failure decoding JSON request", http.StatusBadRequest)
 		return
 	}
 
 	// make sure this assignment exists
-	asst, present := assignmentsByID[assignmentID]
+	asst, present := assignmentsByID[asstID]
 	if !present {
-		log.Printf("No such assignment: %d", assignmentID)
+		log.Printf("No such assignment: %d", asstID)
 		http.Error(w, "Assignment not found", http.StatusNotFound)
 		return
 	}
@@ -361,7 +361,7 @@ func student_submit(w http.ResponseWriter, r *http.Request, db *sql.DB, student 
 	// make sure the assignment is active
 	now := time.Now().In(timeZone)
 	if now.Before(asst.Open) || now.After(asst.Close) {
-		log.Printf("Assignment is not active: %d", assignmentID)
+		log.Printf("Assignment is not active: %d", asstID)
 		http.Error(w, "Assignment not active", http.StatusForbidden)
 		return
 	}
@@ -373,7 +373,7 @@ func student_submit(w http.ResponseWriter, r *http.Request, db *sql.DB, student 
 	filtered := make(map[string]interface{})
 
 	for _, field := range problemType.FieldList {
-		if value, present := submission[field.Name]; present && field.Student == "edit" {
+		if value, present := data[field.Name]; present && field.Student == "edit" {
 			filtered[field.Name] = value
 		} else if field.Student == "edit" {
 			log.Printf("Missing %s field in submission", field.Name)
@@ -388,7 +388,7 @@ func student_submit(w http.ResponseWriter, r *http.Request, db *sql.DB, student 
 	// make sure this is an active course
 	if now.After(course.Close) {
 		log.Printf("Not an active course: %s", course.Tag)
-		http.Error(w, "Assignment not found", http.StatusNotFound)
+		http.Error(w, "Not an active course", http.StatusNotFound)
 		return
 	}
 
@@ -401,7 +401,7 @@ func student_submit(w http.ResponseWriter, r *http.Request, db *sql.DB, student 
 
 	txn, err := db.Begin()
 	if err != nil {
-		log.Printf("DB error startint transaction: %v", err)
+		log.Printf("DB error starting transaction: %v", err)
 		http.Error(w, "DB error", http.StatusInternalServerError)
 		return
 	}
@@ -410,7 +410,7 @@ func student_submit(w http.ResponseWriter, r *http.Request, db *sql.DB, student 
 	defer txn.Rollback()
 
 	// is this the first submission for this assignment?
-	solution, solutionPresent := student.SolutionsByAssignment[assignmentID]
+	solution, solutionPresent := student.SolutionsByAssignment[asstID]
 	if !solutionPresent {
 		result, err := txn.Exec("insert into Solution values (null, ?, ?)",
 			student.Email,
@@ -463,16 +463,16 @@ func student_submit(w http.ResponseWriter, r *http.Request, db *sql.DB, student 
 
 	// add the solution to memory if needed
 	if !solutionPresent {
-		asst.SolutionsByStudent[student.Email] = solution
-		student.SolutionsByAssignment[asst.ID] = solution
 		solutionsByID[solution.ID] = solution
+		student.SolutionsByAssignment[asst.ID] = solution
+		asst.SolutionsByStudent[student.Email] = solution
 	}
 
 	// add the submission to memory
 	sub := &SubmissionDB{
 		Solution:    solution,
 		TimeStamp:   now,
-		Submission:  submission,
+		Submission:  filtered,
 		GradeReport: make(map[string]interface{}),
 		Passed:      false,
 	}
