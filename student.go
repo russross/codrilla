@@ -7,13 +7,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/gorilla/pat"
+	"github.com/russross/blackfriday"
 	"log"
 	"net/http"
 	"path/filepath"
 	"regexp"
 	"sort"
 	"strconv"
-	"strings"
 	"time"
 )
 
@@ -218,12 +218,7 @@ func student_assignment(w http.ResponseWriter, r *http.Request, student *Student
 	problemType := problem.Type
 
 	// filter problem fields down to what the student is allowed to see
-	data := make(map[string]interface{})
-	for _, field := range problemType.FieldList {
-		if value, present := problem.Data[field.Name]; present && field.Student == "view" {
-			data[field.Name] = value
-		}
-	}
+	data := filterFields("student", "view", problemType, problem.Data)
 
 	// get the most recent student attempt (if any)
 	sol, present := student.SolutionsByAssignment[asst.ID]
@@ -300,12 +295,7 @@ func student_result(w http.ResponseWriter, r *http.Request, student *StudentDB) 
 	problemType := problem.Type
 
 	// filter problem fields down to what the student is allowed to see
-	data := make(map[string]interface{})
-	for _, field := range problemType.FieldList {
-		if value, present := problem.Data[field.Name]; present && field.Student == "view" {
-			data[field.Name] = value
-		}
-	}
+	data := filterFields("result", "view", problemType, problem.Data)
 
 	// get the student attempt
 	sol, present := student.SolutionsByAssignment[asst.ID]
@@ -313,7 +303,6 @@ func student_result(w http.ResponseWriter, r *http.Request, student *StudentDB) 
 		log.Printf("Student has not submitted a solution for this assignment")
 		http.Error(w, "Submission not found", http.StatusNotFound)
 		return
-
 	}
 
 	// make sure this is a valid submission number
@@ -340,17 +329,6 @@ func student_result(w http.ResponseWriter, r *http.Request, student *StudentDB) 
 	}
 
 	writeJson(w, r, resp)
-}
-
-func fixLineEndings(s string) string {
-	s = strings.Replace(s, "\r\n", "\n", -1)
-	if !strings.HasSuffix(s, "\n") {
-		s = s + "\n"
-	}
-	for strings.Contains(s, " \n") {
-		s = strings.Replace(s, " \n", "\n", -1)
-	}
-	return s
 }
 
 func student_submit(w http.ResponseWriter, r *http.Request, db *sql.DB, student *StudentDB, decoder *json.Decoder) {
@@ -388,39 +366,7 @@ func student_submit(w http.ResponseWriter, r *http.Request, db *sql.DB, student 
 	problemType := asst.Problem.Type
 
 	// filter it down to expected student fields
-	filtered := make(map[string]interface{})
-
-	for _, field := range problemType.FieldList {
-		if value, present := data[field.Name]; present && field.Student == "edit" {
-			switch t := value.(type) {
-			case string:
-				// normalize line endings
-				filtered[field.Name] = fixLineEndings(t)
-
-			case []interface{}:
-				// some kind of list type
-				var lst []interface{}
-				for _, elt := range t {
-					// are the list elements strings?
-					switch elt_t := elt.(type) {
-					case string:
-						lst = append(lst, fixLineEndings(elt_t))
-
-					default:
-						lst = append(lst, elt)
-					}
-				}
-				filtered[field.Name] = lst
-
-			default:
-				filtered[field.Name] = value
-			}
-		} else if field.Student == "edit" {
-			log.Printf("Missing %s field in submission", field.Name)
-			http.Error(w, "Submission missing required field", http.StatusBadRequest)
-			return
-		}
-	}
+	filtered := filterFields("student", "edit", problemType, data)
 
 	// get the course
 	course := asst.Course
@@ -561,17 +507,26 @@ func student_download(w http.ResponseWriter, r *http.Request, student *StudentDB
 	problemType := problem.Type
 
 	// filter problem fields down to what the student is allowed to see
-	data := make(map[string]interface{})
-	for _, field := range problemType.FieldList {
-		if value, present := problem.Data[field.Name]; present && field.Student == "view" {
-			data[field.Name] = value
+	data := filterFields("student", "view", problemType, problem.Data)
+
+	// get the student attempt (or nil if no attempt has been made)
+	if sol, present := student.SolutionsByAssignment[asst.ID]; present && len(sol.SubmissionsInOrder) > 0 {
+		submission := sol.SubmissionsInOrder[len(sol.SubmissionsInOrder)-1]
+		attempt := filterFields("student", "edit", problemType, submission.Submission)
+		for key, value := range attempt {
+			data[key] = value
+		}
+		if len(submission.GradeReport) > 0 {
+			report := filterFields("grader", "edit", problemType, submission.GradeReport)
+			for _, field := range problemType.FieldList {
+				if value, present := report[field.Name]; present && field.Result == "view" {
+					data[field.Name] = value
+				}
+			}
 		}
 	}
 
-	// get the student attempt (or nil if no attempt has been made)
-	sol := student.SolutionsByAssignment[asst.ID]
-
-	filename, zipfile, err := makeAssignmentZipFile("student", asst, sol)
+	filename, zipfile, err := makeProblemZipFile(problem, data)
 	if err != nil {
 		http.Error(w, "Failed to create zipfile", http.StatusInternalServerError)
 	}
@@ -592,8 +547,7 @@ var (
 	LonelyS2            = regexp.MustCompile(`_s$`)
 )
 
-func makeAssignmentZipFile(role string, asst *AssignmentDB, solution *SolutionDB) (filename string, zipfile []byte, err error) {
-	problem := asst.Problem
+func makeProblemZipFile(problem *ProblemDB, data map[string]interface{}) (filename string, zipfile []byte, err error) {
 	problemType := problem.Type
 
 	// make the problem name into a decent directory name
@@ -608,28 +562,20 @@ func makeAssignmentZipFile(role string, asst *AssignmentDB, solution *SolutionDB
 	var buf bytes.Buffer
 	z := zip.NewWriter(&buf)
 
-	merged := make(map[string]interface{})
-	for key, value := range problem.Data {
-		merged[key] = value
-	}
-
 	// extract the appropriate fields
-fieldloop:
 	for _, field := range problemType.FieldList {
-		if !(role == "creator" && field.Creator == "edit" || role == "student" && field.Student == "view") {
-			continue
-		}
-		var values []interface{}
-		value, present := problem.Data[field.Name]
+		value, present := data[field.Name]
 		if !present {
 			continue
 		}
 
 		// gather the value or values into a list
+		var values []interface{}
 		if field.List {
-			switch t := value.(type) {
-			case []interface{}:
-				values = t
+			if lst, ok := value.([]interface{}); ok {
+				values = lst
+			} else {
+				log.Printf("makeProblemZipFile expected []interface{} from %s but found %T", field.Name, value)
 			}
 		} else {
 			values = []interface{}{value}
@@ -637,10 +583,9 @@ fieldloop:
 
 		var name string
 		for i, elt := range values {
+			s := fmt.Sprintf("%v", elt)
 			switch field.Type {
-			case "string":
-				fallthrough
-			case "text":
+			case "string", "text":
 				if field.List {
 					name = fmt.Sprintf("%s%02d.txt", field.Name, i+1)
 				} else {
@@ -656,17 +601,45 @@ fieldloop:
 
 			case "markdown":
 				if field.List {
-					name = fmt.Sprintf("%s%02d.md", field.Name, i+1)
+					name = fmt.Sprintf("%s%02d.html", field.Name, i+1)
 				} else {
-					name = fmt.Sprintf("%s.md", field.Name)
+					name = fmt.Sprintf("%s.html", field.Name)
 				}
 
+				input := []byte("# " + problem.Name + "\n\n" + s)
+
+				htmlFlags := 0
+				htmlFlags |= blackfriday.HTML_USE_SMARTYPANTS
+				htmlFlags |= blackfriday.HTML_SMARTYPANTS_FRACTIONS
+				htmlFlags |= blackfriday.HTML_SMARTYPANTS_LATEX_DASHES
+				htmlFlags |= blackfriday.HTML_COMPLETE_PAGE
+				renderer := blackfriday.HtmlRenderer(
+					htmlFlags,
+					problem.Name,
+					"http://codrilla.cs.dixie.edu/css/codrilla.css")
+
+				extensions := 0
+				extensions |= blackfriday.EXTENSION_NO_INTRA_EMPHASIS
+				extensions |= blackfriday.EXTENSION_TABLES
+				extensions |= blackfriday.EXTENSION_FENCED_CODE
+				extensions |= blackfriday.EXTENSION_AUTOLINK
+				extensions |= blackfriday.EXTENSION_STRIKETHROUGH
+				extensions |= blackfriday.EXTENSION_SPACE_HEADERS
+				output := blackfriday.Markdown(input, renderer, extensions)
+
+				s = string(output)
+			case "int", "bool":
+				continue
+
 			default:
-				continue fieldloop
+				if field.List {
+					name = fmt.Sprintf("%s%02d", field.Name, i+1)
+				} else {
+					name = fmt.Sprintf("%s", field.Name)
+				}
 			}
 
-			s := fmt.Sprintf("%v", elt)
-			if len(s) > 0 {
+			if len(s) > 0 && s != "\n" {
 				out, err := z.Create(filepath.Join(prefix, name))
 				if err != nil {
 					log.Printf("Error creating file %s in .zip file: %v", name, err)

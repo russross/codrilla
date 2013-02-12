@@ -183,40 +183,7 @@ func problem_save_common(w http.ResponseWriter, r *http.Request, db *sql.DB, ins
 	}
 
 	// validate the problem and prepare for storage
-	filtered := make(map[string]interface{})
-
-	for _, field := range problemType.FieldList {
-		if value, present := problem.Data[field.Name]; present && field.Creator == "edit" {
-			switch t := value.(type) {
-			case string:
-				// normalize line endings
-				filtered[field.Name] = fixLineEndings(t)
-
-			case []interface{}:
-				// some kind of list type
-				var lst []interface{}
-				for _, elt := range t {
-					// are the list elements strings?
-					switch elt_t := elt.(type) {
-					case string:
-						lst = append(lst, fixLineEndings(elt_t))
-
-					default:
-						lst = append(lst, elt)
-					}
-				}
-				filtered[field.Name] = lst
-
-			default:
-				filtered[field.Name] = value
-			}
-		} else if field.Creator == "edit" {
-			log.Printf("Missing %s field in problem", field.Name)
-			http.Error(w, "Problem data missing required field", http.StatusBadRequest)
-			return
-		}
-	}
-	problem.Data = filtered
+	problem.Data = filterFields("creator", "edit", problemType, problem.Data)
 
 	problemJson, err := json.Marshal(problem.Data)
 	if err != nil {
@@ -385,7 +352,7 @@ func getProblem(problem *ProblemDB) *ProblemGetResponse {
 		Name: problem.Name,
 		Type: problem.Type.Tag,
 		Tags: tags,
-		Data: problem.Data,
+		Data: filterFields("creator", "edit", problem.Type, problem.Data),
 	}
 
 	return resp
@@ -489,4 +456,128 @@ func problem_tags(w http.ResponseWriter, r *http.Request, instructor *Instructor
 	}
 
 	writeJson(w, r, resp)
+}
+
+func filterFields(role, action string, problemType *ProblemType, raw map[string]interface{}) map[string]interface{} {
+	if len(raw) == 0 {
+		raw = make(map[string]interface{})
+	}
+
+	filtered := make(map[string]interface{})
+	for _, field := range problemType.FieldList {
+		switch role {
+		case "creator":
+			if field.Creator != action {
+				continue
+			}
+		case "student":
+			if field.Student != action {
+				continue
+			}
+		case "grader":
+			if field.Grader != action {
+				continue
+			}
+		case "result":
+			if field.Result != action {
+				continue
+			}
+		default:
+			continue
+		}
+
+		value := raw[field.Name]
+		if field.List {
+			switch field.Type {
+			case "bool":
+				out := []interface{}{}
+				lst, ok := value.([]interface{})
+				if ok {
+					for n, elt := range lst {
+						if b, ok := elt.(bool); ok {
+							out = append(out, b)
+						} else {
+							log.Printf("filterFields: expected bool for %s[%d], got %T", field.Name, n, value)
+						}
+					}
+				}
+				filtered[field.Name] = out
+
+			case "int":
+				out := []interface{}{}
+				lst, ok := value.([]interface{})
+				if ok {
+					for n, elt := range lst {
+						if i, ok := elt.(int); ok {
+							out = append(out, i)
+						} else if i, ok := elt.(int64); ok {
+							out = append(out, int(i))
+						} else if i, ok := elt.(float64); ok {
+							out = append(out, int(i))
+						} else {
+							log.Printf("filterFields: expected int for %s[%d], got %T", field.Name, n, value)
+						}
+					}
+				}
+				filtered[field.Name] = out
+
+			default:
+				out := []interface{}{}
+				lst, ok := value.([]interface{})
+				if ok {
+					for n, elt := range lst {
+						if s, ok := elt.(string); ok {
+							out = append(out, fixLineEndings(s))
+						} else {
+							log.Printf("filterFields: expected string for %s[%d], got %T", field.Name, n, value)
+						}
+					}
+				}
+				filtered[field.Name] = out
+			}
+		} else {
+			switch field.Type {
+			case "bool":
+				if b, ok := value.(bool); ok {
+					filtered[field.Name] = b
+				} else {
+					log.Printf("filterFields: expected bool for %s, got %T", field.Name, value)
+					filtered[field.Name] = false
+				}
+
+			case "int":
+				if i, ok := value.(int); ok {
+					filtered[field.Name] = i
+				} else if i, ok := value.(int64); ok {
+					filtered[field.Name] = int(i)
+				} else if i, ok := value.(float64); ok {
+					filtered[field.Name] = int(i)
+				} else {
+					log.Printf("filterFields: expected int for %s, got %T", field.Name, value)
+					filtered[field.Name] = 0
+				}
+
+			default:
+				if s, ok := value.(string); ok {
+					filtered[field.Name] = fixLineEndings(s)
+				} else {
+					log.Printf("filterFields: expected string for %s, got %T", field.Name, value)
+					filtered[field.Name] = "\n"
+				}
+			}
+		}
+	}
+
+	return filtered
+}
+
+func fixLineEndings(s string) string {
+	s = strings.Replace(s, "\r\n", "\n", -1) + "\n"
+	for strings.Contains(s, " \n") {
+		s = strings.Replace(s, " \n", "\n", -1)
+	}
+	for strings.HasSuffix(s, "\n\n") {
+		s = s[:len(s)-1]
+	}
+	return s
 }

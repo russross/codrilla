@@ -819,7 +819,7 @@ jQuery(function ($) {
 
         if (field.Type == 'markdown' && action == 'edit') {
             // markdown editor
-            var $editor = $('<textarea class="stringfield" />').val(value);
+            var $editor = $('<textarea class="stringfield" />').val(value.replace(/\n*$/, ''));
             $div.append($editor);
             CodeMirror.fromTextArea($editor[0], {
                 mode: 'markdown',
@@ -833,7 +833,7 @@ jQuery(function ($) {
             $('<div />').html(html).appendTo($div);
         } else if (field.Type == 'python' && (action == 'edit' || action == 'view')) {
             // python editor/viewer
-            var $editor = $('<textarea />').val(value);
+            var $editor = $('<textarea />').val(value.replace(/\n*$/, ''));
             if (action == 'edit')
                 $editor.addClass('stringfield');
             $div.append($editor);
@@ -846,7 +846,7 @@ jQuery(function ($) {
             });
         } else if (field.Type == 'text' && (action == 'edit' || action == 'view')) {
             // text editor/viewer
-            var $editor = $('<textarea />').val(value);
+            var $editor = $('<textarea />').val(value.replace(/\n*$/, ''));
             if (action == 'edit')
                 $editor.addClass('stringfield');
             $div.append($editor);
@@ -873,7 +873,7 @@ jQuery(function ($) {
             $('<p />').text(typeof value == 'boolean' ? (value ? 'Yes' : 'No') : 'Unknown').appendTo($div);
         } else if (field.Type == 'string' && action == 'edit') {
             // string editor
-            var $input = $('<input type="text" class="stringfield">').val(value);
+            var $input = $('<input type="text" class="stringfield">').val(value.replace(/\n*$/, ''));
             $div.append($input);
         } else {
             console.log('createEditorField: not implemented for Type =', field.Type, 'and action =', action);
