@@ -606,7 +606,7 @@ func makeProblemZipFile(problem *ProblemDB, data map[string]interface{}) (filena
 					name = fmt.Sprintf("%s.html", field.Name)
 				}
 
-				input := []byte("# " + problem.Name + "\n\n" + s)
+				input := []byte("## " + problem.Name + "\n\n" + s)
 
 				htmlFlags := 0
 				htmlFlags |= blackfriday.HTML_USE_SMARTYPANTS

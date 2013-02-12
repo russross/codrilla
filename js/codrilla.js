@@ -557,6 +557,12 @@ jQuery(function ($) {
             $link.data('assignmentID', asst.ID);
             $('<p />').append($link).appendTo($item);
         }
+
+        // add a download link
+        if (!future) {
+            var $link = $('<a href="/student/download/' + asst.ID + '" target="_blank">Download this assignment</a>');
+            $('<p />').append($link).appendTo($item);
+        }
         return $item;
     };
 
