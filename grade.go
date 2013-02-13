@@ -138,7 +138,7 @@ func gradeOne(db *sql.DB) (bool, error) {
 	u := &url.URL{
 		Scheme: "http",
 		Host:   config.GraderAddress,
-		Path:   "/" + problemType.Tag,
+		Path:   "/grade/" + problemType.Tag,
 	}
 	request, err := http.NewRequest("POST", u.String(), bytes.NewReader(requestBody))
 	if err != nil {

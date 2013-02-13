@@ -496,7 +496,7 @@ func filterFields(role, action string, problemType *ProblemType, raw map[string]
 					for n, elt := range lst {
 						if b, ok := elt.(bool); ok {
 							out = append(out, b)
-						} else {
+						} else if elt != nil {
 							log.Printf("filterFields: expected bool for %s[%d], got %T", field.Name, n, value)
 						}
 					}
@@ -514,7 +514,7 @@ func filterFields(role, action string, problemType *ProblemType, raw map[string]
 							out = append(out, int(i))
 						} else if i, ok := elt.(float64); ok {
 							out = append(out, int(i))
-						} else {
+						} else if elt != nil {
 							log.Printf("filterFields: expected int for %s[%d], got %T", field.Name, n, value)
 						}
 					}
@@ -528,7 +528,7 @@ func filterFields(role, action string, problemType *ProblemType, raw map[string]
 					for n, elt := range lst {
 						if s, ok := elt.(string); ok {
 							out = append(out, fixLineEndings(s))
-						} else {
+						} else if elt != nil {
 							log.Printf("filterFields: expected string for %s[%d], got %T", field.Name, n, value)
 						}
 					}
@@ -540,7 +540,7 @@ func filterFields(role, action string, problemType *ProblemType, raw map[string]
 			case "bool":
 				if b, ok := value.(bool); ok {
 					filtered[field.Name] = b
-				} else {
+				} else if value != nil {
 					log.Printf("filterFields: expected bool for %s, got %T", field.Name, value)
 					filtered[field.Name] = false
 				}
@@ -552,7 +552,7 @@ func filterFields(role, action string, problemType *ProblemType, raw map[string]
 					filtered[field.Name] = int(i)
 				} else if i, ok := value.(float64); ok {
 					filtered[field.Name] = int(i)
-				} else {
+				} else if value != nil {
 					log.Printf("filterFields: expected int for %s, got %T", field.Name, value)
 					filtered[field.Name] = 0
 				}
@@ -560,7 +560,7 @@ func filterFields(role, action string, problemType *ProblemType, raw map[string]
 			default:
 				if s, ok := value.(string); ok {
 					filtered[field.Name] = fixLineEndings(s)
-				} else {
+				} else if value != nil {
 					log.Printf("filterFields: expected string for %s, got %T", field.Name, value)
 					filtered[field.Name] = "\n"
 				}
