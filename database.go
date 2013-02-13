@@ -230,6 +230,7 @@ type ProblemDB struct {
 }
 
 var problemsByID = make(map[int64]*ProblemDB)
+var outputByProblemID = make(map[int64]interface{})
 
 func ScanProblemTable(db *sql.DB) {
 	rows, err := db.Query("select * from Problem")

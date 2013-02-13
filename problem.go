@@ -278,6 +278,9 @@ func problem_save_common(w http.ResponseWriter, r *http.Request, db *sql.DB, ins
 		return
 	}
 
+	// delete cached output
+	delete(outputByProblemID, problem.ID)
+
 	// update in-memory version
 	var p *ProblemDB
 	if id >= 0 {

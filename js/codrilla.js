@@ -294,10 +294,10 @@ jQuery(function ($) {
             var text = 'Total: ';
             text += passed + ' passed';
             if (total > 0)
-                text += ' (' + 100.0*passed/total + '%)';
+                text += ' (' + Math.round(100.0*passed/total) + '%)';
             text += ', ' + failed + ' failed ';
             if (total > 0)
-                text += ' (' + 100.0*failed/total + '%)';
+                text += ' (' + Math.round(100.0*failed/total) + '%)';
             text += ', ' + pending + ' still pending';
             $('<p />').append($('<b />').text(text)).appendTo($div);
 

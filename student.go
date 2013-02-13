@@ -229,6 +229,10 @@ func student_assignment(w http.ResponseWriter, r *http.Request, student *Student
 
 	// filter problem fields down to what the student is allowed to see
 	data := filterFields("student", "view", problemType, problem.Data)
+	output, err := getOutput(problem)
+	if err == nil {
+		data["Output"] = output
+	}
 
 	// get the most recent student attempt (if any)
 	sol, present := student.SolutionsByAssignment[asst.ID]
@@ -306,6 +310,10 @@ func student_result(w http.ResponseWriter, r *http.Request, student *StudentDB) 
 
 	// filter problem fields down to what the student is allowed to see
 	data := filterFields("result", "view", problemType, problem.Data)
+	output, err := getOutput(problem)
+	if err == nil {
+		data["Output"] = output
+	}
 
 	// get the student attempt
 	sol, present := student.SolutionsByAssignment[asst.ID]
@@ -534,6 +542,10 @@ func student_download(w http.ResponseWriter, r *http.Request, student *StudentDB
 				}
 			}
 		}
+	}
+	output, err := getOutput(problem)
+	if err == nil {
+		data["Output"] = output
 	}
 
 	filename, zipfile, err := makeProblemZipFile(problem, data)

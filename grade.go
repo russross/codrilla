@@ -219,3 +219,66 @@ func gradeOne(db *sql.DB) (bool, error) {
 
 	return true, nil
 }
+
+func getOutput(problem *ProblemDB) (interface{}, error) {
+	// check the cache
+	if result, present := outputByProblemID[problem.ID]; present {
+		return result, nil
+	}
+
+	// get the appropriate fields
+	data := make(map[string]interface{})
+	for _, field := range problem.Type.FieldList {
+		if value, present := problem.Data[field.Name]; present && field.Grader == "view" {
+			data[field.Name] = value
+		}
+	}
+
+	// form the request json
+	requestBody, err := json.Marshal(data)
+	if err != nil {
+		log.Printf("getOutput: error marshalling data for grader: %v", err)
+		return nil, err
+	}
+
+	// send it to the grader
+	u := &url.URL{
+		Scheme: "http",
+		Host:   config.GraderAddress,
+		Path:   "/output/" + problem.Type.Tag,
+	}
+	request, err := http.NewRequest("POST", u.String(), bytes.NewReader(requestBody))
+	if err != nil {
+		log.Printf("getOutput: error creating request object: %v", err)
+		return nil, err
+	}
+	request.Header.Add("Content-Type", "application/json")
+	request.Header.Add("Accept", "application/json")
+	resp, err := http.DefaultClient.Do(request)
+	if err != nil {
+		log.Printf("getOutput: error sending request to %s: %v", u.String(), err)
+		return nil, err
+	}
+	if resp.StatusCode != 200 {
+		log.Printf("getOutput: error result from request to %s: %s", u.String(), resp.Status)
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	// decode the response
+	report := make(map[string]interface{})
+
+	if err = json.NewDecoder(resp.Body).Decode(&report); err != nil {
+		log.Printf("getOutput: failed to decode response from %s: %v", u.String(), err)
+		return nil, err
+	}
+
+	if result, present := report["Output"]; present {
+		outputByProblemID[problem.ID] = result
+		return result, nil
+	}
+
+	log.Printf("getOutput: result did not include an Output field")
+
+	return nil, fmt.Errorf("missing Output field")
+}
