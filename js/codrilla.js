@@ -273,6 +273,8 @@ jQuery(function ($) {
             grades.sort(function (a, b) {
                 if (a.Close < b.Close) return -1;
                 else if (a.Close > b.Close) return 1;
+                else if (a.Name < b.Name) return -1;
+                else if (a.Name > b.Name) return 1;
                 else return 0;
             });
             $.each(grades, function (i, asst) {

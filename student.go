@@ -78,15 +78,25 @@ type AssignmentListing struct {
 
 type AssignmentsByOpen []*AssignmentListing
 
-func (p AssignmentsByOpen) Len() int           { return len(p) }
-func (p AssignmentsByOpen) Less(i, j int) bool { return p[i].Open.Before(p[j].Open) }
-func (p AssignmentsByOpen) Swap(i, j int)      { p[i], p[j] = p[j], p[i] }
+func (p AssignmentsByOpen) Len() int { return len(p) }
+func (p AssignmentsByOpen) Less(i, j int) bool {
+	if p[i].Open.Equal(p[j].Open) {
+		return p[i].Name < p[j].Name
+	}
+	return p[i].Open.Before(p[j].Open)
+}
+func (p AssignmentsByOpen) Swap(i, j int) { p[i], p[j] = p[j], p[i] }
 
 type AssignmentsByClose []*AssignmentListing
 
-func (p AssignmentsByClose) Len() int           { return len(p) }
-func (p AssignmentsByClose) Less(i, j int) bool { return p[i].Close.Before(p[j].Close) }
-func (p AssignmentsByClose) Swap(i, j int)      { p[i], p[j] = p[j], p[i] }
+func (p AssignmentsByClose) Len() int { return len(p) }
+func (p AssignmentsByClose) Less(i, j int) bool {
+	if p[i].Close.Equal(p[j].Close) {
+		return p[i].Name < p[j].Name
+	}
+	return p[i].Close.Before(p[j].Close)
+}
+func (p AssignmentsByClose) Swap(i, j int) { p[i], p[j] = p[j], p[i] }
 
 func getAssignmentListing(asst *AssignmentDB, student *StudentDB) *AssignmentListing {
 	now := time.Now().In(timeZone)
