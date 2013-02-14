@@ -141,7 +141,7 @@ jQuery(function ($) {
 
     var refreshStudentSchedule = function (setTab) {
         $.getJSON('/student/courses', function (info) {
-            var passed = 0, failed = 0, pending = 0, tobegradedcount = 0;
+            var tobegradedcount = 0;
             var $div = $('#tab-student-schedule');
             $div
                 .empty()
@@ -151,6 +151,7 @@ jQuery(function ($) {
                 return;
             }
             $.each(info.Courses, function (i, course) {
+                var passed = 0, failed = 0, pending = 0;
                 $('<h2 />').text(course.Name).appendTo($div);
                 if (course.PastAssignments.length == 0 && course.OpenAssignments.length == 0 && course.FutureAssignments.length == 0) {
                     $div.append('<p>No assignments on the schedule</p>');
@@ -162,7 +163,7 @@ jQuery(function ($) {
                 $('<thead><tr class="collapse"><td colspan="4">Past Assignments</td></tr></thead>').appendTo($table);
                 var $tbody = $('<tbody />').appendTo($table);
                 $.each(course.PastAssignments, function (i, asst) {
-                    $tbody.prepend(buildAssignmentRow(asst));
+                    $tbody.append(buildAssignmentRow(asst));
 
                     if (asst.ToBeGraded > 0) tobegradedcount++;
                     if (asst.Passed) passed++;
@@ -177,7 +178,7 @@ jQuery(function ($) {
                 $('<thead><tr class="collapse"><td colspan="4">Open Assignments</td></tr></thead>').appendTo($table);
                 var $tbody = $('<tbody />').appendTo($table);
                 $.each(course.OpenAssignments, function (i, asst) {
-                    $tbody.prepend(buildAssignmentRow(asst));
+                    $tbody.append(buildAssignmentRow(asst));
 
                     if (asst.ToBeGraded > 0) tobegradedcount++;
                     if (asst.Passed) passed++;
