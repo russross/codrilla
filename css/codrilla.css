@@ -10,7 +10,7 @@
   display: none;
 }
 
-.assignmentEditLink, .collapse {
+.assignmentResultLink, .collapse {
   cursor: pointer;
 }
 
