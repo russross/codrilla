@@ -1177,10 +1177,12 @@ jQuery(function ($) {
     } else {
         setupLoggedOut();
     }
+    var pre = new Date();
     $.getJSON('/auth/time', function (server) {
         // figure out roughly how far off our clock is from the server
         var now = new Date();
+        var latency = Math.round((now - pre) * 0.5);
         var really = new Date(server);
-        skew = really - now;
+        skew = (really - now) + latency;
     });
 });
