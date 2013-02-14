@@ -10,7 +10,11 @@
   display: none;
 }
 
-.assignmentResultLink, .collapse {
+.assignmentResultLink:hover, .collapse:hover {
+  background: #aabbcc;
+}
+
+.collapse, .assignmentResultLink {
   cursor: pointer;
 }
 
@@ -19,20 +23,20 @@ input[type=text] {
 }
 
 body {
-  font-family:"Palatino Linotype", "Book Antiqua", Palatino, Georgia, serif;
-  letter-spacing:.05em;
-  line-height:1.3em;
-  font-size:12pt;
-  margin:25px;
+  font-family: "Palatino Linotype", "Book Antiqua", Palatino, Georgia, serif;
+  letter-spacing: .05em;
+  line-height: 1.3em;
+  font-size: 12pt;
+  margin: 25px;
 }
 
 code {
   padding: 0 2px;
   border: 1px solid #dddddd;
-  font-size:11pt;
+  font-size: 11pt;
   font-family: "Courier New", Courier, monospace;
-  letter-spacing:0.00em;
-  line-height:1em;
+  letter-spacing: 0.00em;
+  line-height: 1em;
 }
 
 pre {
@@ -100,7 +104,7 @@ blockquote {
 
 a {
   font-size: 90%;
-  color:#aa0000;
+  color: #aa0000;
 }
 
 a:hover {
