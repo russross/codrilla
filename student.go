@@ -29,38 +29,42 @@ func init() {
 }
 
 type CourseListing struct {
-	Tag             string
-	Name            string
-	Close           time.Time
-	Instructors     []string
-	OpenAssignments []*AssignmentListing
-	NextAssignment  *AssignmentListing
+	Tag               string
+	Name              string
+	Close             time.Time
+	Instructors       []string
+	PastAssignments   []*AssignmentListing
+	OpenAssignments   []*AssignmentListing
+	FutureAssignments []*AssignmentListing
 }
 
 func getCourseListing(course *CourseDB, student *StudentDB) *CourseListing {
 	now := time.Now().In(timeZone)
 	elt := &CourseListing{
-		Tag:             course.Tag,
-		Name:            course.Name,
-		Close:           course.Close,
-		Instructors:     []string{},
-		OpenAssignments: []*AssignmentListing{},
+		Tag:               course.Tag,
+		Name:              course.Name,
+		Close:             course.Close,
+		Instructors:       []string{},
+		PastAssignments:   []*AssignmentListing{},
+		OpenAssignments:   []*AssignmentListing{},
+		FutureAssignments: []*AssignmentListing{},
 	}
 	for email, _ := range course.Instructors {
 		elt.Instructors = append(elt.Instructors, email)
 	}
-	var next *AssignmentDB
 	for _, asst := range course.Assignments {
-		if now.After(asst.Open) && now.Before(asst.Close) {
+		if now.After(asst.Close) {
+			elt.PastAssignments = append(elt.PastAssignments, getAssignmentListing(asst, student))
+		} else if now.Before(asst.Open) {
+			elt.FutureAssignments = append(elt.FutureAssignments, getAssignmentListing(asst, student))
+		} else {
 			elt.OpenAssignments = append(elt.OpenAssignments, getAssignmentListing(asst, student))
-		} else if now.Before(asst.Open) && (next == nil || asst.Open.Before(next.Open)) {
-			next = asst
 		}
 	}
 	sort.Sort(AssignmentsByClose(elt.OpenAssignments))
-	if next != nil {
-		elt.NextAssignment = getAssignmentListing(next, student)
-	}
+	sort.Sort(AssignmentsByClose(elt.PastAssignments))
+	sort.Sort(AssignmentsByOpen(elt.FutureAssignments))
+
 	return elt
 }
 
@@ -494,6 +498,8 @@ func student_download(w http.ResponseWriter, r *http.Request, student *StudentDB
 		return
 	}
 
+	now := time.Now().In(timeZone)
+
 	// find the assignment
 	asst, present := assignmentsByID[id]
 	if !present {
@@ -502,11 +508,17 @@ func student_download(w http.ResponseWriter, r *http.Request, student *StudentDB
 		return
 	}
 
+	// make sure the assignment is not in the future
+	if now.Before(asst.Open) {
+		log.Printf("Assignment is in the future")
+		http.Error(w, "Cannot download future assignment", http.StatusForbidden)
+		return
+	}
+
 	// find the course
 	course := asst.Course
 
 	// make sure the course is active
-	now := time.Now().In(timeZone)
 	if now.After(course.Close) {
 		log.Printf("Course is not active: %s", course.Tag)
 		http.Error(w, "Course not active", http.StatusForbidden)

@@ -1,13 +1,17 @@
-li.green {
+.green {
   color: green;
 }
 
-li.red {
+.red {
   color: red;
 }
 
 .ui-tabs .ui-state-disabled { 
   display: none;
+}
+
+.assignmentEditLink, .collapse {
+  cursor: pointer;
 }
 
 input[type=text] {
@@ -81,6 +85,10 @@ table thead {
 
 table tr:nth-child(even) {
   background: #f0f0f0;
+}
+
+table tr.blankrow {
+  background: #fafafa;
 }
 
 blockquote {

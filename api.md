@@ -18,10 +18,12 @@ Students
     *   Name: the name of the course
     *   Close: timestamp when the course ends
     *   Instructors: list of instructor emails for this course
+    *   ClosedAssignments: list of already-closed assignments,
+        sorted by deadline
     *   OpenAssignments: list of open assignments for this course,
         sorted by deadline
-    *   NextAssignment: generic listing for the next assignment to
-        become available, or null if none is currently set
+    *   FutureAssignments: generic listing for assignments not yet
+        available
 
     Generic assignment listings contain the following:
 
