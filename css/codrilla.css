@@ -81,6 +81,7 @@ table {
 table thead {
   background: #ddeeff;
   text-align: left;
+  font-weight: bold;
 }
 
 table tr:nth-child(even) {

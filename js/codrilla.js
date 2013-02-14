@@ -145,13 +145,13 @@ jQuery(function ($) {
             var $div = $('#tab-student-schedule');
             $div
                 .empty()
-                .append('<h2>Courses and assignments</h2>');
+                .append('<h1>Courses and assignments</h1>');
             if (!info.Courses || info.Courses.length == 0) {
                 $div.append('<p>You are not enrolled in any active courses</p>');
                 return;
             }
             $.each(info.Courses, function (i, course) {
-                $('<h3 />').text(course.Name).appendTo($div);
+                $('<h2 />').text(course.Name).appendTo($div);
                 if (course.PastAssignments.length == 0 && course.OpenAssignments.length == 0 && course.FutureAssignments.length == 0) {
                     $div.append('<p>No assignments on the schedule</p>');
                     return;
@@ -229,7 +229,8 @@ jQuery(function ($) {
         $(this).parent('thead').next('tbody').toggle();
         return false;
     });
-    $('.assignmentEditLink').live('click', function () {
+    $('.assignmentResultLink').live('click', function (e) {
+        if ($(e.target).is('a')) return true;
         var asst = $(this).data('asst');
         if (!asst) return;
         if (asst.Attempts > 0) {
@@ -257,7 +258,7 @@ jQuery(function ($) {
                 var $link = $('<a href="#" class="gradereportlink" />');
                 $link.data('course', course);
                 $link.text('grade report');
-                $('<h3 />').text(course.Name).append(' (').append($link).append(')').appendTo($div);
+                $('<h2 />').text(course.Name).append(' (').append($link).append(')').appendTo($div);
                 if (course.OpenAssignments.length == 0 && !course.NextAssignment) {
                     $div.append('<p>No future assignments on the schedule yet</p>');
                     return;
@@ -297,11 +298,13 @@ jQuery(function ($) {
             var $div = $('#tab-student-editor');
             $div
                 .empty()
-                .append('<h2>Assignment Editor</h2>');
+                .append('<h1>Assignment Editor</h1>');
 
             // display the general assignment info
-            var $list = $('<ul />').appendTo($div);
-            $list.append(buildAssignmentListItem(asst.Assignment, true, false));
+            var $name = $('<b />').text('“' + asst.Assignment.Name + '”');
+            $('<p />').append($name).appendTo($div);
+            var $due = $('<p>Due </p>').appendTo($div);
+            formatDate($due, asst.Assignment.Close);
 
             // prepare the editor
             var contents = {};
@@ -333,11 +336,13 @@ jQuery(function ($) {
             var $div = $('#tab-student-result')
             $div
                 .empty()
-                .append('<h2>Result Viewer</h2>');
+                .append('<h1>Result Viewer</h1>');
 
             // display the general assignment info
-            var $list = $('<ul />').appendTo($div);
-            $list.append(buildAssignmentListItem(asst.Assignment, false, true));
+            var $name = $('<b />').text('“' + asst.Assignment.Name + '”');
+            $('<p />').append($name).appendTo($div);
+            var $due = $('<p>Due </p>').appendTo($div);
+            formatDate($due, asst.Assignment.Close);
 
             // prepare the editor
             var contents = {};
@@ -419,7 +424,7 @@ jQuery(function ($) {
             var $div = $('#tab-instructor-schedule');
             $div
                 .empty()
-                .append('<h2>Courses and assignments</h2>');
+                .append('<h1>Courses and assignments</h1>');
             if (!courseList || courseList.length == 0) {
                 $div.append('<p>You are not the instructor for any active courses</p>');
                 return;
@@ -484,7 +489,7 @@ jQuery(function ($) {
                 var $div = $('#tab-instructor-problemeditor');
                 $div
                     .empty()
-                    .append('<h2>Problem Editor</h2>');
+                    .append('<h1>Problem Editor</h1>');
 
                 $('<p />').text('Problem type: ' + problemType.Name).appendTo($div);
 
@@ -542,7 +547,7 @@ jQuery(function ($) {
                 var $div = $('#tab-instructor-assignmenteditor');
                 $div
                     .empty()
-                    .append('<h2>Assignment Editor</h2>');
+                    .append('<h1>Assignment Editor</h1>');
 
                 $('<h3 />').text('Course: ' + courseTag).appendTo($div);
                 $('<h3>Start date (leave blank to start now)</h3>').appendTo($div);
@@ -721,7 +726,7 @@ jQuery(function ($) {
         // editor/result link
         if (now > new Date(asst.Open) && (now < new Date(asst.Close) || asst.Attempts > 0)) {
             $row.data('asst', asst);
-            $row.addClass('assignmentEditLink');
+            $row.addClass('assignmentResultLink');
         }
 
         return $row;
