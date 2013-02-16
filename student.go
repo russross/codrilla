@@ -20,11 +20,10 @@ import (
 func init() {
 	r := pat.New()
 	r.Add("GET", `/student/courses`, handlerStudent(student_courses))
-	r.Add("GET", `/student/grades/{coursetag:[\w:_\-]+$}`, handlerStudent(student_grades))
 	r.Add("GET", `/student/assignment/{id:\d+$}`, handlerStudent(student_assignment))
+	r.Add("GET", `/student/submission/{id:\d+}/{n:\d+$}`, handlerStudent(student_assignment))
 	r.Add("GET", `/student/download/{id:\d+$}`, handlerStudent(student_download))
 	r.Add("POST", `/student/submit/{id:\d+$}`, handlerStudentJson(student_submit))
-	r.Add("GET", `/student/result/{id:\d+}/{n:-1$|\d+$}`, handlerStudent(student_result))
 	http.Handle("/student/", r)
 }
 
@@ -154,36 +153,96 @@ func student_courses(w http.ResponseWriter, r *http.Request, student *StudentDB)
 	writeJson(w, r, resp)
 }
 
-// get a list of assignments for this student with grade info
-func student_grades(w http.ResponseWriter, r *http.Request, student *StudentDB) {
-	courseTag := r.URL.Query().Get(":coursetag")
-
-	course, present := student.Courses[courseTag]
-	if !present {
-		log.Printf("student not enrolled in course/course does not exist: %s", courseTag)
-		http.Error(w, "course not found", http.StatusNotFound)
-		return
-	}
-
-	list := []*AssignmentListing{}
-	now := time.Now().In(timeZone)
-	for _, asst := range course.Assignments {
-		if !now.Before(asst.Open) {
-			list = append(list, getAssignmentListing(asst, student))
-		}
-	}
-	sort.Sort(AssignmentsByClose(list))
-
-	writeJson(w, r, list)
-}
-
-type StudentAssignmentResponse struct {
+type StudentAssignmentResult struct {
 	CourseTag   string
 	CourseName  string
 	ProblemType *ProblemType
-	ProblemData map[string]interface{}
 	Assignment  *AssignmentListing
-	Attempt     map[string]interface{}
+	Data        map[string]interface{}
+}
+
+func getStudentAssignmentData(w http.ResponseWriter, r *http.Request, student *StudentDB, id int64, n int) (*CourseDB, *AssignmentDB, map[string]interface{}) {
+	// find the assignment
+	asst, present := assignmentsByID[id]
+	if !present {
+		log.Printf("No such assignment: %d", id)
+		http.Error(w, "Not found", http.StatusNotFound)
+		return nil, nil, nil
+	}
+
+	// make sure the assignment is active or past
+	now := time.Now().In(timeZone)
+	if now.Before(asst.Open) {
+		log.Printf("Assignment is not yet open: %d", asst.ID)
+		http.Error(w, "Assignment not open yet", http.StatusForbidden)
+		return nil, nil, nil
+	}
+
+	// find the course
+	course := asst.Course
+
+	// make sure the course is active
+	if now.After(course.Close) {
+		log.Printf("Course is not active: %s", course.Tag)
+		http.Error(w, "Course not active", http.StatusForbidden)
+		return nil, nil, nil
+	}
+
+	// make sure the student is in the course
+	if _, present := student.Courses[course.Tag]; !present {
+		log.Printf("Student not enrolled in course: %s", course.Tag)
+		http.Error(w, "Not enrolled in course", http.StatusForbidden)
+		return nil, nil, nil
+	}
+
+	// get the problem
+	problem := asst.Problem
+	problemType := problem.Type
+
+	// filter problem fields down to what the student is allowed to see
+	data := filterFields("result", "view", problemType, problem.Data)
+
+	// get the student attempt
+	sol, present := student.SolutionsByAssignment[asst.ID]
+	count := 0
+	if present {
+		count = len(sol.SubmissionsInOrder)
+	}
+	if n == -1 && count > 0 {
+		n = count - 1
+	}
+	if n != -1 && (n < 0 || n >= count) {
+		log.Printf("Invalid solution number requested: %d with %d available", n, count)
+		http.Error(w, "Submission not found", http.StatusNotFound)
+		return nil, nil, nil
+	}
+
+	// get the requested submission
+	if count > 0 {
+		submission := sol.SubmissionsInOrder[n]
+		attempt := filterFields("student", "edit", problemType, submission.Submission)
+		for key, value := range attempt {
+			data[key] = value
+		}
+		if len(submission.GradeReport) > 0 {
+			report := filterFields("grader", "edit", problemType, submission.GradeReport)
+			for _, field := range problemType.FieldList {
+				if value, present := report[field.Name]; present && field.Result == "view" {
+					data[field.Name] = value
+				}
+			}
+		}
+	} else {
+		data["Report"] = ""
+	}
+
+	// include the expected output if available
+	output, err := getOutput(problem)
+	if err == nil {
+		data["Output"] = output
+	}
+
+	return course, asst, data
 }
 
 func student_assignment(w http.ResponseWriter, r *http.Request, student *StudentDB) {
@@ -193,161 +252,30 @@ func student_assignment(w http.ResponseWriter, r *http.Request, student *Student
 		http.Error(w, "Not found", http.StatusNotFound)
 		return
 	}
+	n_s := r.URL.Query().Get(":n")
+	n := -1
+	if n_s != "" {
+		n64, err := strconv.ParseInt(n_s, 10, 64)
+		if err != nil || n < 0 {
+			log.Printf("Bad submission number: %s", n_s)
+			http.Error(w, "Not found", http.StatusNotFound)
+			return
+		}
+		n = int(n64)
+	}
 
-	// find the assignment
-	asst, present := assignmentsByID[id]
-	if !present {
-		log.Printf("No such assignment: %d", id)
-		http.Error(w, "Not found", http.StatusNotFound)
+	// get the data to return
+	course, asst, data := getStudentAssignmentData(w, r, student, id, n)
+	if data == nil || len(data) == 0 {
 		return
 	}
 
-	// make sure the assignment is active
-	now := time.Now().In(timeZone)
-	if now.Before(asst.Open) || now.After(asst.Close) {
-		log.Printf("Assignment is not active: %d", asst.ID)
-		http.Error(w, "Assignment not active", http.StatusForbidden)
-		return
-	}
-
-	// find the course
-	course := asst.Course
-
-	// make sure the course is active
-	if now.After(course.Close) {
-		log.Printf("Course is not active: %s", course.Tag)
-		http.Error(w, "Course not active", http.StatusForbidden)
-		return
-	}
-
-	// make sure the student is in the course
-	if _, present := student.Courses[course.Tag]; !present {
-		log.Printf("Student not enrolled in course: %s", course.Tag)
-		http.Error(w, "Not enrolled in course", http.StatusForbidden)
-		return
-	}
-
-	// get the problem
-	problem := asst.Problem
-	problemType := problem.Type
-
-	// filter problem fields down to what the student is allowed to see
-	data := filterFields("student", "view", problemType, problem.Data)
-	output, err := getOutput(problem)
-	if err == nil {
-		data["Output"] = output
-	}
-
-	// get the most recent student attempt (if any)
-	sol, present := student.SolutionsByAssignment[asst.ID]
-	attempt := make(map[string]interface{})
-	if present && len(sol.SubmissionsInOrder) > 0 {
-		attempt = sol.SubmissionsInOrder[len(sol.SubmissionsInOrder)-1].Submission
-	}
-
-	resp := &StudentAssignmentResponse{
+	resp := &StudentAssignmentResult{
 		CourseTag:   course.Tag,
 		CourseName:  course.Name,
-		ProblemType: problemType,
-		ProblemData: data,
+		ProblemType: asst.Problem.Type,
 		Assignment:  getAssignmentListing(asst, student),
-		Attempt:     attempt,
-	}
-
-	writeJson(w, r, resp)
-}
-
-type StudentGraderReportResult struct {
-	CourseTag   string
-	CourseName  string
-	ProblemType *ProblemType
-	ProblemData map[string]interface{}
-	Assignment  *AssignmentListing
-	Attempt     map[string]interface{}
-	ResultData  map[string]interface{}
-}
-
-func student_result(w http.ResponseWriter, r *http.Request, student *StudentDB) {
-	id, err := strconv.ParseInt(r.URL.Query().Get(":id"), 10, 64)
-	if err != nil {
-		log.Printf("Bad ID: %s", r.URL.Query().Get(":id"))
-		http.Error(w, "Not found", http.StatusNotFound)
-		return
-	}
-	n64, err := strconv.ParseInt(r.URL.Query().Get(":n"), 10, 64)
-	if err != nil {
-		log.Printf("Bad submission number: %s", r.URL.Query().Get(":n"))
-		http.Error(w, "Not found", http.StatusNotFound)
-		return
-	}
-	n := int(n64)
-
-	// find the assignment
-	asst, present := assignmentsByID[id]
-	if !present {
-		log.Printf("No such assignment: %d", id)
-		http.Error(w, "Not found", http.StatusNotFound)
-		return
-	}
-
-	// find the course
-	course := asst.Course
-
-	// make sure the course is active
-	now := time.Now().In(timeZone)
-	if now.After(course.Close) {
-		log.Printf("Course is not active: %s", course.Tag)
-		http.Error(w, "Course not active", http.StatusForbidden)
-		return
-	}
-
-	// make sure the student is in the course
-	if _, present := student.Courses[course.Tag]; !present {
-		log.Printf("Student not enrolled in course: %s", course.Tag)
-		http.Error(w, "Not enrolled in course", http.StatusForbidden)
-		return
-	}
-
-	// get the problem
-	problem := asst.Problem
-	problemType := problem.Type
-
-	// filter problem fields down to what the student is allowed to see
-	data := filterFields("result", "view", problemType, problem.Data)
-	output, err := getOutput(problem)
-	if err == nil {
-		data["Output"] = output
-	}
-
-	// get the student attempt
-	sol, present := student.SolutionsByAssignment[asst.ID]
-	if !present {
-		log.Printf("Student has not submitted a solution for this assignment")
-		http.Error(w, "Submission not found", http.StatusNotFound)
-		return
-	}
-
-	// make sure this is a valid submission number
-	if n == -1 {
-		n = len(sol.SubmissionsInOrder) - 1
-	}
-	if n < 0 || n >= len(sol.SubmissionsInOrder) {
-		log.Printf("Invalid submission number: %d", n)
-		http.Error(w, "Submission not found", http.StatusNotFound)
-		return
-	}
-
-	// get the submission
-	submission := sol.SubmissionsInOrder[n]
-
-	resp := &StudentGraderReportResult{
-		CourseTag:   course.Tag,
-		CourseName:  course.Name,
-		ProblemType: problemType,
-		ProblemData: data,
-		Assignment:  getAssignmentListing(asst, student),
-		Attempt:     submission.Submission,
-		ResultData:  submission.GradeReport,
+		Data:        data,
 	}
 
 	writeJson(w, r, resp)
@@ -498,69 +426,13 @@ func student_download(w http.ResponseWriter, r *http.Request, student *StudentDB
 		return
 	}
 
-	now := time.Now().In(timeZone)
-
-	// find the assignment
-	asst, present := assignmentsByID[id]
-	if !present {
-		log.Printf("No such assignment: %d", id)
-		http.Error(w, "Not found", http.StatusNotFound)
+	// get the data to download
+	_, asst, data := getStudentAssignmentData(w, r, student, id, -1)
+	if data == nil || len(data) == 0 {
 		return
 	}
 
-	// make sure the assignment is not in the future
-	if now.Before(asst.Open) {
-		log.Printf("Assignment is in the future")
-		http.Error(w, "Cannot download future assignment", http.StatusForbidden)
-		return
-	}
-
-	// find the course
-	course := asst.Course
-
-	// make sure the course is active
-	if now.After(course.Close) {
-		log.Printf("Course is not active: %s", course.Tag)
-		http.Error(w, "Course not active", http.StatusForbidden)
-		return
-	}
-
-	// make sure the student is in the course
-	if _, present := student.Courses[course.Tag]; !present {
-		log.Printf("Student not enrolled in course: %s", course.Tag)
-		http.Error(w, "Not enrolled in course", http.StatusForbidden)
-		return
-	}
-
-	// get the problem
-	problem := asst.Problem
-	problemType := problem.Type
-
-	// filter problem fields down to what the student is allowed to see
-	data := filterFields("student", "view", problemType, problem.Data)
-
-	// get the student attempt (or nil if no attempt has been made)
-	if sol, present := student.SolutionsByAssignment[asst.ID]; present && len(sol.SubmissionsInOrder) > 0 {
-		submission := sol.SubmissionsInOrder[len(sol.SubmissionsInOrder)-1]
-		attempt := filterFields("student", "edit", problemType, submission.Submission)
-		for key, value := range attempt {
-			data[key] = value
-		}
-		if len(submission.GradeReport) > 0 {
-			report := filterFields("grader", "edit", problemType, submission.GradeReport)
-			for _, field := range problemType.FieldList {
-				if value, present := report[field.Name]; present && field.Result == "view" {
-					data[field.Name] = value
-				}
-			}
-		}
-	}
-	output, err := getOutput(problem)
-	if err == nil {
-		data["Output"] = output
-	}
-
-	filename, zipfile, err := makeProblemZipFile(problem, data)
+	filename, zipfile, err := makeProblemZipFile(asst.Problem, data)
 	if err != nil {
 		http.Error(w, "Failed to create zipfile", http.StatusInternalServerError)
 	}

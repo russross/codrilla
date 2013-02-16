@@ -530,7 +530,11 @@ func filterFields(role, action string, problemType *ProblemType, raw map[string]
 				if ok {
 					for n, elt := range lst {
 						if s, ok := elt.(string); ok {
-							out = append(out, fixLineEndings(s))
+							if action == "edit" && role != "grader" {
+								out = append(out, fixLineEndings(s))
+							} else {
+								out = append(out, s)
+							}
 						} else if elt != nil {
 							log.Printf("filterFields: expected string for %s[%d], got %T", field.Name, n, value)
 						}
@@ -562,7 +566,11 @@ func filterFields(role, action string, problemType *ProblemType, raw map[string]
 
 			default:
 				if s, ok := value.(string); ok {
-					filtered[field.Name] = fixLineEndings(s)
+					if action == "edit" && role != "grader" {
+						filtered[field.Name] = fixLineEndings(s)
+					} else {
+						filtered[field.Name] = s
+					}
 				} else if value != nil {
 					log.Printf("filterFields: expected string for %s, got %T", field.Name, value)
 					filtered[field.Name] = "\n"

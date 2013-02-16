@@ -230,17 +230,12 @@ jQuery(function ($) {
         $(this).parent('thead').next('tbody').toggle();
         return false;
     });
-    $('.assignmentResultLink').live('click', function (e) {
+    $('.assignmentEditorLink').live('click', function (e) {
         if ($(e.target).is('a')) return true;
         var asst = $(this).data('asst');
         if (!asst) return;
-        if (asst.Attempts > 0) {
-            $('#tab-student-result').data('assignmentID', asst.ID);
-            refreshStudentResult(true);
-        } else {
-            $('#tab-student-editor').data('assignmentID', asst.ID);
-            refreshStudentEditor(true);
-        }
+		$('#tab-student-editor').data('assignmentID', asst.ID);
+		refreshStudentEditor(true);
         return false;
     });
 
@@ -307,116 +302,28 @@ jQuery(function ($) {
             var $due = $('<p>Due </p>').appendTo($div);
             formatDate($due, asst.Assignment.Close);
 
+			// are we waiting for a grading result?
+			var waiting = typeof(asst.Data.Report) == 'undefined';
+
             // prepare the editor
-            var contents = {};
-            $.each(asst.ProblemData || {}, function (key, value) {
-                contents[key] = value;
-            });
-            $.each(asst.Attempt || {}, function (key, value) {
-                contents[key] = value;
-            });
-            var $editor = createEditor(asst.ProblemType.FieldList, contents, 'student');
+            var $editor = createEditor(asst.ProblemType.FieldList, asst.Data, 'student', !asst.Assignment.Active || waiting);
             $div.append($editor);
 
-            // let them submit
-            var $button = $('<button id="studentsubmitbutton">Submit solution</button>');
-            $button.data('assignmentID', asstID);
-            $button.appendTo($div);
+			if (asst.Assignment.Active) {
+				// let them submit
+				var $button = $('<button id="studentsubmitbutton">Submit solution</button>');
+				$button.data('assignmentID', asstID);
+				$button.appendTo($div);
+			}
 
             if (setTab)
                 $('#tabs').tabs('enable', 2).tabs('option', 'active', 2);
 
             $('.CodeMirror').each(function () { this.CodeMirror.refresh(); });
-        });
-    };
-
-    var refreshStudentResult = function (setTab) {
-        var asstID = $('#tab-student-result').data('assignmentID');
-        if (!asstID) return;
-        $.getJSON('/student/result/' + asstID + '/-1', function (asst) {
-            var $div = $('#tab-student-result')
-            $div
-                .empty()
-                .append('<h1>Result Viewer</h1>');
-
-            // display the general assignment info
-            var $name = $('<b />').text('“' + asst.Assignment.Name + '”');
-            $('<p />').append($name).appendTo($div);
-            var $due = $('<p>Due </p>').appendTo($div);
-            formatDate($due, asst.Assignment.Close);
-
-            // prepare the editor
-            var contents = {};
-            $.each(asst.ProblemData || {}, function (key, value) {
-                contents[key] = value;
-            });
-            $.each(asst.Attempt || {}, function (key, value) {
-                contents[key] = value;
-            });
-            $.each(asst.ResultData || {}, function (key, value) {
-                contents[key] = value;
-            });
-            var $editor = createEditor(asst.ProblemType.FieldList, contents, 'result');
-            $div.append($editor);
-
-            if (setTab)
-                $('#tabs').tabs('enable', 3).tabs('option', 'active', 3);
-
-            $('.CodeMirror').each(function () { this.CodeMirror.refresh(); });
 
             // schedule a refresh?
-            if (!asst.ResultData || Object.keys(asst.ResultData).length == 0) {
-                window.setTimeout(refreshStudentResult, 2000);
-            }
-        });
-    };
-
-    var refreshStudentGrade = function (setTab) {
-        var course = $('#tab-student-grades').data('course');
-        if (!course) return;
-        $.getJSON('/student/grades/' + course.Tag, function (grades) {
-            var $div = $('#tab-student-grades').empty();
-            $('<h2 />').text('Grade report for: ' + course.Name).appendTo($div);
-            var $list = $('<ul />').appendTo($div);
-            var passed = 0, failed = 0, pending = 0, tobegradedcount = 0;
-            grades.sort(function (a, b) {
-                if (a.Close < b.Close) return -1;
-                else if (a.Close > b.Close) return 1;
-                else if (a.Name < b.Name) return -1;
-                else if (a.Name > b.Name) return 1;
-                else return 0;
-            });
-            $.each(grades, function (i, asst) {
-                if (!asst.ForCredit) return;
-
-                if (asst.ToBeGraded > 0)
-                    tobegradedcount++;
-
-                if (asst.Passed) passed++;
-                else if (!asst.Active && asst.ToBeGraded == 0) failed++;
-                else pending++;
-
-                $list.append(buildAssignmentListItem(asst));
-            });
-
-            var total = passed + failed;
-            var text = 'Total: ';
-            text += passed + ' passed';
-            if (total > 0)
-                text += ' (' + Math.round(100.0*passed/total) + '%)';
-            text += ', ' + failed + ' failed ';
-            if (total > 0)
-                text += ' (' + Math.round(100.0*failed/total) + '%)';
-            text += ', ' + pending + ' still pending';
-            $('<p />').append($('<b />').text(text)).appendTo($div);
-
-            if (setTab)
-                $('#tabs').tabs('enable', 4).tabs('option', 'active', 4);
-
-            // schedule a refresh?
-            if (tobegradedcount > 0) {
-                window.setTimeout(refreshStudentGrade, 2000);
-            }
+            if (waiting)
+                window.setTimeout(refreshStudentEditor, 2000);
         });
     };
 
@@ -517,7 +424,7 @@ jQuery(function ($) {
                         contents[key] = value;
                     });
                 }
-                var $editor = createEditor(problemType.FieldList, contents, 'creator');
+                var $editor = createEditor(problemType.FieldList, contents, 'creator', false);
                 $div.append($editor);
 
                 // let them submit
@@ -679,7 +586,7 @@ jQuery(function ($) {
 
     var buildAssignmentRow = function (asst) {
         var now = serverTime();
-        var $row = $('<tr />');
+        var $row = $('<tr />').data('asst', asst);
 
         // color the row if appropriate
         if (asst.Passed && asst.ToBeGraded == 0)
@@ -688,12 +595,7 @@ jQuery(function ($) {
             $row.addClass('red');
 
         // name
-        if (asst.Active) {
-            var $link = $('<a href="#" class="assignmenteditorlink">editor</a>').data('assignmentID', asst.ID);
-            $('<td />').text(asst.Name).append(' (').append($link).append(')').appendTo($row);
-        } else {
-            $('<td />').text(asst.Name).appendTo($row);
-        }
+		$('<td />').text(asst.Name).appendTo($row);
 
         // due/open date
         if (now < new Date(asst.Open)) {
@@ -726,27 +628,11 @@ jQuery(function ($) {
 
         // editor/result link
         if (now > new Date(asst.Open) && (now < new Date(asst.Close) || asst.Attempts > 0)) {
-            $row.data('asst', asst);
-            $row.addClass('assignmentResultLink');
+            $row.addClass('assignmentEditorLink');
         }
 
         return $row;
     };
-
-    $('.gradereportlink').live('click', function () {
-        // load a grade report for this course
-        var course = $(this).data('course');
-        $('#tab-student-grades').data('course', course);
-        refreshStudentGrade(true);
-        return false;
-    });
-
-    $('.assignmentresultlink').live('click', function () {
-        var asstID = $(this).data('assignmentID');
-        $('#tab-student-result').data('assignmentID', asstID);
-        refreshStudentResult(true);
-        return false;
-    });
 
     $('.assignmenteditorlink').live('click', function () {
         // load the assignment
@@ -904,7 +790,7 @@ jQuery(function ($) {
     //
     //
 
-    var createEditor = function (fieldList, contents, role) {
+    var createEditor = function (fieldList, contents, role, readonly) {
         var $main = $('<div />');
 
         // run through the list of fields
@@ -937,7 +823,7 @@ jQuery(function ($) {
                 var value = contents[field.Name] || [field.Default];
 
                 $.each(value, function (i, onevalue) {
-                    var $elt = createEditorField(field, onevalue, role);
+                    var $elt = createEditorField(field, onevalue, role, readonly);
                     if ($elt) {
                         // delete the header and append an hrule
                         $elt.find('h2').first().remove();
@@ -950,13 +836,13 @@ jQuery(function ($) {
                     }
                 });
                 if (action == 'edit')
-                    $('<button class="btn btn-primary addeditorfield">Add</button>').appendTo($div);
+                    $('<button class="addeditorfield">Add</button>').appendTo($div);
                 $div.appendTo($main);
             } else {
                 var value = contents[field.Name];
                 if (typeof value == 'undefined')
                     value = field.Default;
-                var $div = createEditorField(field, value, role);
+                var $div = createEditorField(field, value, role, readonly);
                 if ($div) {
                     $div.data('field', field).data('role', role);
                     $div.appendTo($main);
@@ -967,7 +853,7 @@ jQuery(function ($) {
         return $main;
     };
 
-    var createEditorField = function (field, value, role) {
+    var createEditorField = function (field, value, role, readonly) {
         var action;
         if (role == 'creator')
             action = field.Creator;
@@ -981,6 +867,8 @@ jQuery(function ($) {
         }
 
         if (action == 'nothing') return null;
+		if (action == 'edit' && readonly) action = 'view';
+		if (action == 'view' && (typeof(value) == 'undefined' || typeof(value) == 'string' && value.search(/^\s*$/) == 0)) return null;
       
         var $div = $('<div />');
         if (action == 'edit' && field.Prompt)
@@ -1066,7 +954,7 @@ jQuery(function ($) {
         var $div = $(this).closest('div.editorlist');
         var field = $div.data('field');
         var role = $div.data('role');
-        var $elt = createEditorField(field, field.Default, role);
+        var $elt = createEditorField(field, field.Default, role, readonly);
         if ($elt.hasClass('editorelt'))
             $elt.removeClass('editorelt').addClass('editorlistelt');
         $elt.find('h2').first().remove();

@@ -10,11 +10,11 @@
   display: none;
 }
 
-.assignmentResultLink:hover, .collapse:hover {
+.assignmentEditorLink:hover, .collapse:hover {
   background: #aabbcc;
 }
 
-.collapse, .assignmentResultLink {
+.collapse, .assignmentEditorLink {
   cursor: pointer;
 }
 
