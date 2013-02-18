@@ -234,67 +234,26 @@ jQuery(function ($) {
         if ($(e.target).is('a')) return true;
         var asst = $(this).data('asst');
         if (!asst) return;
-		$('#tab-student-editor').data('assignmentID', asst.ID);
-		refreshStudentEditor(true);
+        $('#tab-student-editor').data('assignmentID', asst.ID);
+        refreshStudentEditor(true);
         return false;
     });
-
-    var refreshStudentScheduleOld = function (setTab) {
-        $.getJSON('/student/courses', function (info) {
-            var tobegradedcount = 0;
-            var $div = $('#tab-student-schedule');
-            $div
-                .empty()
-                .append('<h2>Courses and assignments</h2>');
-            if (!info.Courses || info.Courses.length == 0) {
-                $div.append('<p>You are not enrolled in any active courses</p>');
-                return;
-            }
-            $.each(info.Courses, function (i, course) {
-                var $link = $('<a href="#" class="gradereportlink" />');
-                $link.data('course', course);
-                $link.text('grade report');
-                $('<h2 />').text(course.Name).append(' (').append($link).append(')').appendTo($div);
-                if (course.OpenAssignments.length == 0 && !course.NextAssignment) {
-                    $div.append('<p>No future assignments on the schedule yet</p>');
-                    return;
-                }
-                var $list = $('<ul />').appendTo($div);
-                $.each(course.OpenAssignments, function (i, asst) {
-                    if (asst.ToBeGraded > 0)
-                        tobegradedcount++;
-                    $list.append(buildAssignmentListItem(asst));
-                });
-                if (course.NextAssignment) {
-                    var $item = $('<li />').appendTo($list);
-                    $item.append($('<p />').append($('<b />').text('Next upcoming assignment: “' +
-                        course.NextAssignment.Name + '”')));
-                    var $opens = $('<p />').text('Opens ');
-                    formatDate($opens, course.NextAssignment.Open);
-                    $item.append($opens);
-                    var $due = $('<p />').text('Due ');
-                    formatDate($due, course.NextAssignment.Close);
-                    $item.append($due);
-                }
-            });
-            if (setTab)
-                $('#tabs').tabs('enable', 1).tabs('option', 'active', 1);
-
-            // schedule a refresh?
-            if (tobegradedcount > 0) {
-                window.setTimeout(refreshStudentSchedule, 2000);
-            }
-        });
-    };
 
     var refreshStudentEditor = function (setTab) {
         var asstID = $('#tab-student-editor').data('assignmentID');
         if (!asstID) return;
         $.getJSON('/student/assignment/' + asstID, function (asst) {
+            // are we waiting for a grading result?
+            var waiting = asst.Assignment.ToBeGraded && asst.Assignment.ToBeGraded > 0;
+            var readonly = waiting || !asst.Assignment.Active;
+
             var $div = $('#tab-student-editor');
             $div
-                .empty()
-                .append('<h1>Assignment Editor</h1>');
+                .empty();
+            if (readonly)
+                $div.append('<h1>Assignment Viewer</h1>');
+            else
+                $div.append('<h1>Assignment Editor</h1>');
 
             // display the general assignment info
             var $name = $('<b />').text('“' + asst.Assignment.Name + '”');
@@ -302,19 +261,17 @@ jQuery(function ($) {
             var $due = $('<p>Due </p>').appendTo($div);
             formatDate($due, asst.Assignment.Close);
 
-			// are we waiting for a grading result?
-			var waiting = typeof(asst.Data.Report) == 'undefined';
 
             // prepare the editor
-            var $editor = createEditor(asst.ProblemType.FieldList, asst.Data, 'student', !asst.Assignment.Active || waiting);
+            var $editor = createEditor(asst.ProblemType.FieldList, asst.Data, 'student', readonly);
             $div.append($editor);
 
-			if (asst.Assignment.Active) {
-				// let them submit
-				var $button = $('<button id="studentsubmitbutton">Submit solution</button>');
-				$button.data('assignmentID', asstID);
-				$button.appendTo($div);
-			}
+            if (asst.Assignment.Active) {
+                // let them submit
+                var $button = $('<button id="studentsubmitbutton">Submit solution</button>');
+                $button.data('assignmentID', asstID);
+                $button.appendTo($div);
+            }
 
             if (setTab)
                 $('#tabs').tabs('enable', 2).tabs('option', 'active', 2);
@@ -595,7 +552,7 @@ jQuery(function ($) {
             $row.addClass('red');
 
         // name
-		$('<td />').text(asst.Name).appendTo($row);
+        $('<td />').text(asst.Name).appendTo($row);
 
         // due/open date
         if (now < new Date(asst.Open)) {
@@ -627,9 +584,8 @@ jQuery(function ($) {
         }
 
         // editor/result link
-        if (now > new Date(asst.Open) && (now < new Date(asst.Close) || asst.Attempts > 0)) {
+        if (now > new Date(asst.Open))
             $row.addClass('assignmentEditorLink');
-        }
 
         return $row;
     };
@@ -653,11 +609,10 @@ jQuery(function ($) {
             contentType: 'application/json; charset=utf-8',
             data: data,
             success: function (res, status, xhr) {
-                $('#tab-student-editor').empty();
+                $('#tab-student-editor').empty().data('assignmentID', asstID);
                 $('#tabs').tabs('disable', 2).tabs('option', 'active', 1);
                 refreshStudentSchedule();
-                refreshStudentGrade();
-                refreshStudentResult(true);
+                refreshStudentEditor(true);
             },
             error: function (res, status, xhr) {
                 console.log('error submitting solution');
@@ -867,8 +822,8 @@ jQuery(function ($) {
         }
 
         if (action == 'nothing') return null;
-		if (action == 'edit' && readonly) action = 'view';
-		if (action == 'view' && (typeof(value) == 'undefined' || typeof(value) == 'string' && value.search(/^\s*$/) == 0)) return null;
+        if (action == 'edit' && readonly) action = 'view';
+        if (action == 'view' && (typeof(value) == 'undefined' || typeof(value) == 'string' && value.search(/^\s*$/) == 0)) return null;
       
         var $div = $('<div />');
         if (action == 'edit' && field.Prompt)
@@ -1011,7 +966,7 @@ jQuery(function ($) {
     var until = function (when) {
         var now = serverTime();
         var seconds = Math.floor((when.getTime() - now.getTime()) / 1000.0);
-        var sign = (seconds < 0 ? '-' : '');
+        var sign = (seconds < 0 ? ' ago' : ' from now');
         seconds = Math.abs(seconds);
         var d = Math.floor(seconds / (24*3600)); seconds -= d * 24*3600;
         var h = Math.floor(seconds / 3600); seconds -= h * 3600;
@@ -1019,18 +974,18 @@ jQuery(function ($) {
         var s = seconds;
 
         if (d >= 7)
-            return sign + d + 'd';
+            return d + 'd' + sign;
         if (d >= 1)
-            return sign + d + 'd' + h + 'h';
+            return d + 'd' + h + 'h' + sign;
         if (h >= 6)
-            return sign + h + 'h';
+            return h + 'h' + sign;
         if (h >= 1)
-            return sign + h + 'h' + m + 'm';
+            return h + 'h' + m + 'm' + sign;
         if (m >= 10)
-            return sign + m + 'm';
+            return m + 'm' + sign;
         if (m >= 1)
-            return sign + m + 'm' + s + 's';
-        return sign + s + 's';
+            return m + 'm' + s + 's' + sign;
+        return s + 's' + sign;
     };
 
     var months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];

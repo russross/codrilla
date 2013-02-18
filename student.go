@@ -232,8 +232,6 @@ func getStudentAssignmentData(w http.ResponseWriter, r *http.Request, student *S
 				}
 			}
 		}
-	} else {
-		data["Report"] = ""
 	}
 
 	// include the expected output if available
