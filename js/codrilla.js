@@ -197,7 +197,6 @@ jQuery(function ($) {
 
                     if (asst.ToBeGraded > 0) tobegradedcount++;
                     if (asst.Passed) passed++;
-                    else if (!asst.Active && asst.ToBeGraded == 0) failed++;
                     else pending++;
                 });
                 if (course.FutureAssignments.length == 0)
@@ -557,10 +556,11 @@ jQuery(function ($) {
         // due/open date
         if (now < new Date(asst.Open)) {
             var $due = $('<td>Opens </td>').appendTo($row);
+            formatDate($due, asst.Open);
         } else {
             var $due = $('<td>Due </td>').appendTo($row);
+            formatDate($due, asst.Close);
         }
-        formatDate($due, asst.Close);
 
         // attempts
         var msg = '';
@@ -909,7 +909,7 @@ jQuery(function ($) {
         var $div = $(this).closest('div.editorlist');
         var field = $div.data('field');
         var role = $div.data('role');
-        var $elt = createEditorField(field, field.Default, role, readonly);
+        var $elt = createEditorField(field, field.Default, role, false);
         if ($elt.hasClass('editorelt'))
             $elt.removeClass('editorelt').addClass('editorlistelt');
         $elt.find('h2').first().remove();
