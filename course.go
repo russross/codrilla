@@ -324,9 +324,10 @@ func course_newassignment(w http.ResponseWriter, r *http.Request, db *sql.DB, in
 }
 
 type CourseGradesResponseElt struct {
-	Name        string
-	Email       string
-	Assignments []*AssignmentListing
+	Name                    string
+	Email                   string
+	Assignments             []*AssignmentListing
+	Passed, Failed, Pending int
 }
 
 func course_grades(w http.ResponseWriter, r *http.Request, instructor *InstructorDB) {
@@ -356,9 +357,16 @@ func course_grades(w http.ResponseWriter, r *http.Request, instructor *Instructo
 			Assignments: []*AssignmentListing{},
 		}
 		for _, asst := range course.Assignments {
-			if now.Before(asst.Close) {
-				elt.Assignments = append(elt.Assignments, getAssignmentListing(asst, student))
+			asstListing := getAssignmentListing(asst, student)
+			if asstListing.Passed {
+				elt.Passed++
+			} else if now.Before(asst.Close) {
+				elt.Pending++
+			} else {
+				elt.Failed++
 			}
+
+			elt.Assignments = append(elt.Assignments, asstListing)
 		}
 		sort.Sort(AssignmentsByClose(elt.Assignments))
 
