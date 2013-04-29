@@ -7,6 +7,7 @@ jQuery(function ($) {
     };
 
     var getCookies = function () {
+        // note: CODRILLA is global
         CODRILLA = {
               Email: '',
               Role: '',

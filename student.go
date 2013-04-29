@@ -68,15 +68,16 @@ func getCourseListing(course *CourseDB, student *StudentDB) *CourseListing {
 }
 
 type AssignmentListing struct {
-	ID         int64
-	Name       string
-	Open       time.Time
-	Close      time.Time
-	Active     bool
-	ForCredit  bool
-	Attempts   int
-	ToBeGraded int
-	Passed     bool
+	ID             int64
+	Name           string
+	Open           time.Time
+	Close          time.Time
+	Active         bool
+	ForCredit      bool
+	Attempts       int
+	ToBeGraded     int
+	Passed         bool
+	LastSubmission string
 }
 
 type AssignmentsByOpen []*AssignmentListing
@@ -116,9 +117,19 @@ func getAssignmentListing(asst *AssignmentDB, student *StudentDB) *AssignmentLis
 		if present {
 			elt.Attempts = len(sol.SubmissionsInOrder)
 			for i := len(sol.SubmissionsInOrder) - 1; i >= 0; i-- {
-				if len(sol.SubmissionsInOrder[i].GradeReport) > 0 {
+				submission := sol.SubmissionsInOrder[i]
+				if len(submission.GradeReport) > 0 {
 					// record whether the last graded submission was a pass
-					elt.Passed = sol.SubmissionsInOrder[i].Passed
+					elt.Passed = submission.Passed
+
+					// grab the last submission if the student did not pass
+					if !elt.Passed {
+						if attempt, present := submission.Submission["Candidate"]; present {
+							if s, ok := attempt.(string); ok {
+								elt.LastSubmission = s
+							}
+						}
+					}
 					break
 				}
 				elt.ToBeGraded++
